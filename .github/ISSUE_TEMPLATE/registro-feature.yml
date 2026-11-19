@@ -1,0 +1,176 @@
+name: "Registro de Feature (KMP/Flutter + uso de IA)"
+description: "Abra esta issue ANTES de iniciar uma feature. Preencha os campos de abertura e volte para fechar com os campos finais quando terminar."
+title: "[Feature] "
+labels: ["registro-metrica"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Como usar
+        1. Abra esta issue **antes** de começar a feature, preenchendo a seção "Ao iniciar".
+        2. Durante o desenvolvimento:
+           - Commite a saída da IA **sem editar**, com o trailer `AI-Extent: gerado`.
+           - Faça as suas edições em **commits separados**, com `AI-Extent: manual`.
+           - Use `AI-Extent: assistido` só quando a IA deu uma sugestão pontual que você reescreveu.
+           - Incremente o contador de prompts num comentário desta issue.
+        3. Ao terminar, edite esta issue preenchendo "Ao finalizar" e feche-a.
+
+  - type: dropdown
+    id: framework
+    attributes:
+      label: Framework
+      options:
+        - Kotlin Multiplatform (KMP)
+        - Flutter
+    validations:
+      required: true
+
+  - type: input
+    id: feature-nome
+    attributes:
+      label: Nome da feature
+      placeholder: "Ex: Tela de listagem de pedidos"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ai-tool
+    attributes:
+      label: Ferramenta de IA utilizada
+      options:
+        - Nenhuma (implementação manual)
+        - Claude
+        - GitHub Copilot
+        - ChatGPT
+        - Gemini
+        - Outra (especifique nos comentários)
+    validations:
+      required: true
+
+  - type: input
+    id: ai-modelo
+    attributes:
+      label: Modelo e versão da IA
+      description: Preencha conforme o que aparece na ferramenta no momento do uso.
+      placeholder: "Ex: Claude Sonnet 5.5"
+    validations:
+      required: false
+
+  - type: input
+    id: inicio
+    attributes:
+      label: Data/hora de início
+      placeholder: "Ex: 19/10 15:40"
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ## Ao finalizar (preencher ao fechar a issue)
+
+  - type: input
+    id: fim
+    attributes:
+      label: Data/hora de término
+      placeholder: "Ex: 19/10 18:50"
+    validations:
+      required: false
+
+  - type: input
+    id: tempo-total
+    attributes:
+      label: Tempo total gasto
+      description: Aproximado, pode usar o total do WakaTime. É analisado por nível de uso de IA, comparando features com mais e menos IA.
+      placeholder: "Ex: 3h20"
+    validations:
+      required: false
+
+  - type: input
+    id: num-prompts
+    attributes:
+      label: Número de prompts (esforço de interação com a IA)
+      description: Pedidos de geração ou alteração de código feitos à IA. Não conte perguntas triviais.
+      placeholder: "Ex: 14"
+    validations:
+      required: false
+
+  - type: input
+    id: loc-ia
+    attributes:
+      label: LOC gerado por IA / LOC manual
+      description: Calculado pelos commits separados (gerado vs manual) via git diff.
+      placeholder: "Ex: 120 / 40"
+    validations:
+      required: false
+
+  - type: input
+    id: loc-sobrevivente
+    attributes:
+      label: Linhas geradas por IA que sobreviveram até o fim da feature
+      description: Via git blame sobre as linhas do commit "gerado".
+      placeholder: "Ex: 85 de 120"
+    validations:
+      required: false
+
+  - type: input
+    id: compartilhamento
+    attributes:
+      label: Linhas compartilhadas / total
+      description: KMP, linhas em commonMain sobre o total. Flutter, linhas em lib/ sobre o total. Exclua testes e código gerado.
+      placeholder: "Ex: 160 / 210"
+    validations:
+      required: false
+
+  - type: input
+    id: pontos-plataforma
+    attributes:
+      label: Pontos de plataforma (expect/actual no KMP, Platform Channels no Flutter)
+      description: Quantas vezes foi preciso escrever código específico de plataforma nesta feature.
+      placeholder: "Ex: 2"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: dificuldade
+    attributes:
+      label: Dificuldade percebida da tarefa, registrada junto do uso de IA (1 = muito fácil, 5 = muito difícil)
+      options:
+        - "1"
+        - "2"
+        - "3"
+        - "4"
+        - "5"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: confianca
+    attributes:
+      label: Confiança no código gerado pela IA (1 = nenhuma, 5 = total)
+      options:
+        - "1"
+        - "2"
+        - "3"
+        - "4"
+        - "5"
+        - "N/A (não usou IA)"
+    validations:
+      required: false
+
+  - type: textarea
+    id: retrabalho
+    attributes:
+      label: Precisou de retrabalho relevante?
+      description: Sim ou não e, se sim, o que precisou ser refeito manualmente e por quê.
+    validations:
+      required: false
+
+  - type: textarea
+    id: observacoes
+    attributes:
+      label: Observações adicionais
+      description: Bloqueios longos, erros da IA, comparação com a outra plataforma, impressões de DX.
+    validations:
+      required: false
