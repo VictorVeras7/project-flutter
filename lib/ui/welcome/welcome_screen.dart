@@ -64,6 +64,19 @@ class WelcomeScreen extends StatelessWidget {
                 spacing: 11,
                 children: [
                   _LoginButton(onPressed: onLogin),
+                  OutlinedButton(
+                    onPressed: onSignup,
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(54),
+                      foregroundColor: colors.onSurface,
+                      side: BorderSide(color: colors.outline, width: 1.5),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(17),
+                      ),
+                      textStyle: _buttonTextStyle(context),
+                    ),
+                    child: const Text('Criar conta'),
+                  ),
                   Text(
                     'Ao continuar você aceita os Termos de uso e a Política '
                     'de privacidade.',
