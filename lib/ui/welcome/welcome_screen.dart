@@ -63,6 +63,7 @@ class WelcomeScreen extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 spacing: 11,
                 children: [
+                  _LoginButton(onPressed: onLogin),
                   Text(
                     'Ao continuar você aceita os Termos de uso e a Política '
                     'de privacidade.',
@@ -83,6 +84,13 @@ class WelcomeScreen extends StatelessWidget {
     );
   }
 }
+
+TextStyle? _buttonTextStyle(BuildContext context) =>
+    Theme.of(context).textTheme.labelLarge?.copyWith(
+      fontSize: 16,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0,
+    );
 
 class _Logo extends StatelessWidget {
   const _Logo();
@@ -136,6 +144,44 @@ class _Hero extends StatelessWidget {
       height: 318,
       fit: BoxFit.contain,
       semanticLabel: 'Entregador de moto',
+    );
+  }
+}
+
+class _LoginButton extends StatelessWidget {
+  const _LoginButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(17),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0xBFFF6B00),
+            offset: Offset(0, 10),
+            blurRadius: 22,
+            spreadRadius: -10,
+          ),
+        ],
+      ),
+      child: FilledButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(54),
+          backgroundColor: colors.primary,
+          foregroundColor: colors.onPrimary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(17),
+          ),
+          textStyle: _buttonTextStyle(context),
+        ),
+        child: const Text('Entrar'),
+      ),
     );
   }
 }
