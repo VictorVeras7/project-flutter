@@ -29,6 +29,8 @@ class WelcomeScreen extends StatelessWidget {
                   children: [
                     const _Logo(),
                     const SizedBox(height: 22),
+                    const _Hero(),
+                    const SizedBox(height: 26),
                     Text(
                       'Comida boa,\nentrega rápida.',
                       style: TextStyle(
@@ -119,6 +121,21 @@ class _Logo extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _Hero extends StatelessWidget {
+  const _Hero();
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      'assets/images/hero_delivery.png',
+      width: double.infinity,
+      height: 318,
+      fit: BoxFit.contain,
+      semanticLabel: 'Entregador de moto',
     );
   }
 }
