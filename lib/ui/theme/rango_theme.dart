@@ -22,6 +22,20 @@ abstract final class RangoTheme {
     ),
   );
 
+  static final dark = _theme(
+    const ColorScheme.dark(
+      primary: RangoColors.primary,
+      onPrimary: Colors.white,
+      secondary: RangoColors.primarySoft,
+      surface: Color(0xFF121212),
+      onSurface: Color(0xFFF2F2F2),
+      surfaceContainerHighest: Color(0xFF1E1E1E),
+      onSurfaceVariant: Color(0xFFA3A3A3),
+      outline: Color(0xFF2E2E2E),
+      error: RangoColors.error,
+    ),
+  );
+
   static ThemeData _theme(ColorScheme colorScheme) => ThemeData(
     colorScheme: colorScheme,
     scaffoldBackgroundColor: colorScheme.surface,
