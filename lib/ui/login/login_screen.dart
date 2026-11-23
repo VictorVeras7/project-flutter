@@ -2,6 +2,11 @@ import 'package:material_ui/material_ui.dart';
 
 import '../components/auth_components.dart';
 
+// Senha de exemplo do protótipo, até a integração com o back-end.
+const _demoPassword = 'rango123';
+
+enum _LoginStatus { idle, loading, success }
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
     super.key,
@@ -25,6 +30,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final _password = TextEditingController();
   var _showPassword = false;
   var _keepConnected = true;
+  String? _emailError;
+  String? _passwordError;
+  var _status = _LoginStatus.idle;
 
   @override
   void dispose() {
@@ -33,7 +41,47 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _submit() => widget.onLoginSuccess(_keepConnected);
+  Future<void> _submit() async {
+    if (_status != _LoginStatus.idle) return;
+
+    final email = _email.text;
+    final password = _password.text;
+    final emailError = email.isEmpty
+        ? 'Informe seu e-mail.'
+        : !isValidEmail(email)
+        ? 'E-mail inválido.'
+        : null;
+    final passwordError = password.isEmpty ? 'Informe sua senha.' : null;
+
+    setState(() {
+      _emailError = emailError;
+      _passwordError = passwordError;
+      if (emailError == null && passwordError == null) {
+        _status = _LoginStatus.loading;
+      }
+    });
+    if (_status != _LoginStatus.loading) return;
+
+    FocusScope.of(context).unfocus();
+    await Future<void>.delayed(const Duration(milliseconds: 1000));
+    if (!mounted) return;
+
+    if (password != _demoPassword) {
+      setState(() {
+        _status = _LoginStatus.idle;
+        _passwordError = 'Senha incorreta. Tente novamente.';
+      });
+      return;
+    }
+
+    setState(() => _status = _LoginStatus.success);
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    if (!mounted) return;
+
+    _password.clear();
+    setState(() => _status = _LoginStatus.idle);
+    widget.onLoginSuccess(_keepConnected);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -83,6 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             controller: _email,
                             hint: 'voce@email.com',
                             icon: Icons.mail_outline_rounded,
+                            error: _emailError,
                             keyboardType: TextInputType.emailAddress,
                           ),
                           const SizedBox(height: 15),
@@ -91,6 +140,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             controller: _password,
                             hint: 'Sua senha',
                             icon: Icons.lock_outline_rounded,
+                            error: _passwordError,
                             obscureText: !_showPassword,
                             keyboardType: TextInputType.visiblePassword,
                             textInputAction: TextInputAction.done,
@@ -143,7 +193,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 19),
                           AuthSubmitButton(
-                            label: 'Entrar',
+                            label: switch (_status) {
+                              _LoginStatus.idle => 'Entrar',
+                              _LoginStatus.loading => 'Entrando...',
+                              _LoginStatus.success => 'Bem-vinda!',
+                            },
+                            loading: _status == _LoginStatus.loading,
+                            success: _status == _LoginStatus.success,
                             onPressed: _submit,
                           ),
                           const Spacer(),
