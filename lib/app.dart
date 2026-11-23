@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'ui/components/auth_components.dart';
 import 'ui/login/login_screen.dart';
+import 'ui/signup/signup_screen.dart';
 import 'ui/theme/rango_theme.dart';
 import 'ui/welcome/welcome_screen.dart';
 
@@ -72,8 +73,11 @@ class _AppHomeState extends State<_AppHome> {
           ),
           onSignup: () => _open(Screen.signup),
         ),
-        Screen.signup => Scaffold(
-          body: SafeArea(child: BackButton(onPressed: _back)),
+        Screen.signup => SignupScreen(
+          onBack: _back,
+          onSignupSuccess: () =>
+              _finishAuth('Conta criada com sucesso!', RangoToastKind.success),
+          onLogin: () => _open(Screen.login),
         ),
       },
     );
