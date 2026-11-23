@@ -9,6 +9,65 @@ final _emailPattern = RegExp(
 
 bool isValidEmail(String email) => _emailPattern.hasMatch(email);
 
+enum RangoToastKind {
+  success(Icons.check_circle_rounded, Color(0xFF31C25C)),
+  error(Icons.error_rounded, Color(0xFFFF5F58)),
+  info(Icons.info_rounded, Color(0xFFFF8A34));
+
+  const RangoToastKind(this.icon, this.accent);
+
+  final IconData icon;
+  final Color accent;
+}
+
+void showRangoToast(
+  BuildContext context,
+  String message, {
+  RangoToastKind kind = RangoToastKind.success,
+}) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        duration: const Duration(milliseconds: 2600),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 30),
+        padding: EdgeInsets.zero,
+        elevation: 10,
+        // A cor de fundo aparece só nos 3 px da faixa lateral do protótipo.
+        backgroundColor: kind.accent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        content: Container(
+          margin: const EdgeInsets.only(left: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF2C2E33) : const Color(0xFF26262A),
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: Row(
+            spacing: 10,
+            children: [
+              Icon(kind.icon, size: 20, color: Colors.white),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+}
+
 class AuthBackButton extends StatelessWidget {
   const AuthBackButton({super.key, required this.onPressed});
 
