@@ -7,6 +7,38 @@ abstract final class RangoColors {
   static const error = Color(0xFFE53935);
 }
 
+// Cores do protótipo que não têm papel no ColorScheme (fundo da Home, avatar, skeleton).
+class RangoPalette {
+  const RangoPalette._({
+    required this.background,
+    required this.soft,
+    required this.skeleton,
+    required this.shadow,
+  });
+
+  static const _light = RangoPalette._(
+    background: Color(0xFFF7F7F7),
+    soft: Color(0xFFFFF1E6),
+    skeleton: Color(0xFFECECEC),
+    shadow: Color(0x171F1F1F),
+  );
+
+  static const _dark = RangoPalette._(
+    background: Color(0xFF101012),
+    soft: Color(0xFF2C1A0C),
+    skeleton: Color(0xFF23252A),
+    shadow: Color(0x8C000000),
+  );
+
+  static RangoPalette of(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? _dark : _light;
+
+  final Color background;
+  final Color soft;
+  final Color skeleton;
+  final Color shadow;
+}
+
 abstract final class RangoTheme {
   static final light = _theme(
     const ColorScheme.light(
