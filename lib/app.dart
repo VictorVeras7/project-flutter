@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'ui/components/auth_components.dart';
+import 'ui/login/login_screen.dart';
 import 'ui/theme/rango_theme.dart';
 import 'ui/welcome/welcome_screen.dart';
 
@@ -35,6 +37,16 @@ class _AppHomeState extends State<_AppHome> {
 
   void _back() => setState(_stack.removeLast);
 
+  // A Home é a próxima feature; até lá o fluxo volta para a Welcome.
+  void _finishAuth(String message, RangoToastKind kind) {
+    setState(() {
+      _stack
+        ..clear()
+        ..add(Screen.welcome);
+    });
+    showRangoToast(context, message, kind: kind);
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -47,7 +59,20 @@ class _AppHomeState extends State<_AppHome> {
           onLogin: () => _open(Screen.login),
           onSignup: () => _open(Screen.signup),
         ),
-        Screen.login || Screen.signup => Scaffold(
+        Screen.login => LoginScreen(
+          onBack: _back,
+          onLoginSuccess: (_) => _finishAuth(
+            'Home estará disponível em breve.',
+            RangoToastKind.info,
+          ),
+          onForgotPassword: () => showRangoToast(
+            context,
+            'Recuperar senha estará disponível em breve.',
+            kind: RangoToastKind.info,
+          ),
+          onSignup: () => _open(Screen.signup),
+        ),
+        Screen.signup => Scaffold(
           body: SafeArea(child: BackButton(onPressed: _back)),
         ),
       },
