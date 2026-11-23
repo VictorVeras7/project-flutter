@@ -99,11 +99,8 @@ class WelcomeScreen extends StatelessWidget {
 }
 
 TextStyle? _buttonTextStyle(BuildContext context) =>
-    Theme.of(context).textTheme.labelLarge?.copyWith(
-      fontSize: 16,
-      fontWeight: FontWeight.w700,
-      letterSpacing: 0,
-    );
+    Theme.of(context).textTheme.labelLarge
+        ?.copyWith(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0);
 
 class _Logo extends StatelessWidget {
   const _Logo();
