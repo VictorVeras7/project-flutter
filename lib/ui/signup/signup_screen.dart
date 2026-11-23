@@ -72,6 +72,8 @@ class _SignupScreenState extends State<SignupScreen> {
     for (final field in _SignupField.values) field: TextEditingController(),
   };
   var _acceptedTerms = false;
+  var _touched = false;
+  var _loading = false;
 
   @override
   void dispose() {
@@ -81,11 +83,55 @@ class _SignupScreenState extends State<SignupScreen> {
     super.dispose();
   }
 
-  void _submit() => widget.onSignupSuccess();
+  String _text(_SignupField field) => _controllers[field]!.text;
+
+  Map<_SignupField, String> _validate() {
+    final password = _text(_SignupField.password);
+    final confirmation = _text(_SignupField.confirmPassword);
+    final digits = _text(_SignupField.phone).replaceAll(RegExp(r'\D'), '');
+
+    return {
+      if (_text(_SignupField.name).trim().length < 3)
+        _SignupField.name: 'Informe seu nome completo.',
+      if (!isValidEmail(_text(_SignupField.email)))
+        _SignupField.email: 'E-mail inválido.',
+      if (digits.length < 10) _SignupField.phone: 'Telefone incompleto.',
+      if (password.length < 6) _SignupField.password: 'Mínimo de 6 caracteres.',
+      if (confirmation.isEmpty || confirmation != password)
+        _SignupField.confirmPassword: 'As senhas não coincidem.',
+    };
+  }
+
+  Future<void> _submit() async {
+    if (_loading) return;
+
+    final hasErrors = _validate().isNotEmpty;
+    setState(() {
+      _touched = true;
+      _loading = !hasErrors && _acceptedTerms;
+    });
+
+    if (!_acceptedTerms) {
+      showRangoToast(
+        context,
+        'Aceite os termos para continuar.',
+        kind: RangoToastKind.error,
+      );
+    }
+    if (!_loading) return;
+
+    FocusScope.of(context).unfocus();
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    if (!mounted) return;
+
+    setState(() => _loading = false);
+    widget.onSignupSuccess();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final errors = _touched ? _validate() : const <_SignupField, String>{};
 
     return Scaffold(
       body: SafeArea(
@@ -121,11 +167,17 @@ class _SignupScreenState extends State<SignupScreen> {
                         controller: _controllers[field]!,
                         hint: field.hint,
                         icon: field.icon,
+                        error: errors[field],
+                        valid:
+                            _touched &&
+                            errors[field] == null &&
+                            _text(field).isNotEmpty,
                         obscureText: field.obscure,
                         keyboardType: field.keyboardType,
                         textInputAction: field == _SignupField.confirmPassword
                             ? TextInputAction.done
                             : TextInputAction.next,
+                        onChanged: (_) => setState(() {}),
                         onSubmitted: field == _SignupField.confirmPassword
                             ? (_) => _submit()
                             : null,
@@ -140,7 +192,8 @@ class _SignupScreenState extends State<SignupScreen> {
                       child: Opacity(
                         opacity: _acceptedTerms ? 1 : .55,
                         child: AuthSubmitButton(
-                          label: 'Criar conta',
+                          label: _loading ? 'Criando conta...' : 'Criar conta',
+                          loading: _loading,
                           onPressed: _submit,
                         ),
                       ),
