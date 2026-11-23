@@ -1,0 +1,56 @@
+import 'package:material_ui/material_ui.dart';
+
+import 'ui/theme/rango_theme.dart';
+import 'ui/welcome/welcome_screen.dart';
+
+enum Screen { welcome, login, signup }
+
+class RangoApp extends StatelessWidget {
+  const RangoApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Rango',
+      debugShowCheckedModeBanner: false,
+      theme: RangoTheme.light,
+      darkTheme: RangoTheme.dark,
+      home: const _AppHome(),
+    );
+  }
+}
+
+class _AppHome extends StatefulWidget {
+  const _AppHome();
+
+  @override
+  State<_AppHome> createState() => _AppHomeState();
+}
+
+class _AppHomeState extends State<_AppHome> {
+  // Pilha do protótipo: voltar retorna para a tela anterior.
+  final _stack = [Screen.welcome];
+
+  void _open(Screen screen) => setState(() => _stack.add(screen));
+
+  void _back() => setState(_stack.removeLast);
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: _stack.length == 1,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: switch (_stack.last) {
+        Screen.welcome => WelcomeScreen(
+          onLogin: () => _open(Screen.login),
+          onSignup: () => _open(Screen.signup),
+        ),
+        Screen.login || Screen.signup => Scaffold(
+          body: SafeArea(child: BackButton(onPressed: _back)),
+        ),
+      },
+    );
+  }
+}

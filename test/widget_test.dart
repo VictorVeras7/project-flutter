@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:rango/main.dart';
+import 'package:rango/app.dart';
 import 'package:rango/ui/theme/rango_theme.dart';
 import 'package:rango/ui/welcome/welcome_screen.dart';
 
