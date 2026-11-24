@@ -5,6 +5,8 @@ import 'package:rango/app.dart';
 import 'package:rango/ui/theme/rango_theme.dart';
 import 'package:rango/ui/welcome/welcome_screen.dart';
 
+import 'fake_backend.dart';
+
 void main() {
   Future<void> pumpWelcome(
     WidgetTester tester, {
@@ -76,8 +78,11 @@ void main() {
     expect(find.text('Criar conta').hitTestable(), findsOneWidget);
   });
 
-  testWidgets('o app abre na Welcome', (tester) async {
-    await tester.pumpWidget(const RangoApp());
+  testWidgets('sem sessão salva, o app abre na Welcome', (tester) async {
+    setSavedSession(null);
+    await tester.pumpWidget(RangoApp(api: FakeBackend().api()));
+    await tester.pump();
+    await tester.pump();
 
     expect(find.byType(WelcomeScreen), findsOneWidget);
   });

@@ -2,22 +2,28 @@ import 'package:material_ui/material_ui.dart';
 
 import '../components/auth_components.dart';
 
-// Senha de exemplo do protótipo, até a integração com o back-end.
-const _demoPassword = 'rango123';
-
 enum _LoginStatus { idle, loading, success }
+
+// Faz o login no servidor. Devolve os erros por campo ("email" ou "password"); vazio = sucesso.
+typedef Authenticate = Future<Map<String, String>> Function(
+  String email,
+  String password,
+  bool keepConnected,
+);
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
     super.key,
     required this.onBack,
+    required this.authenticate,
     required this.onLoginSuccess,
     required this.onForgotPassword,
     required this.onSignup,
   });
 
   final VoidCallback onBack;
-  final ValueChanged<bool> onLoginSuccess;
+  final Authenticate authenticate;
+  final VoidCallback onLoginSuccess;
   final VoidCallback onForgotPassword;
   final VoidCallback onSignup;
 
@@ -63,13 +69,14 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_status != _LoginStatus.loading) return;
 
     FocusScope.of(context).unfocus();
-    await Future<void>.delayed(const Duration(milliseconds: 1000));
+    final errors = await widget.authenticate(email, password, _keepConnected);
     if (!mounted) return;
 
-    if (password != _demoPassword) {
+    if (errors.isNotEmpty) {
       setState(() {
         _status = _LoginStatus.idle;
-        _passwordError = 'Senha incorreta. Tente novamente.';
+        _emailError = errors['email'];
+        _passwordError = errors['password'];
       });
       return;
     }
@@ -80,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     _password.clear();
     setState(() => _status = _LoginStatus.idle);
-    widget.onLoginSuccess(_keepConnected);
+    widget.onLoginSuccess();
   }
 
   @override

@@ -2,10 +2,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:rango/app.dart';
+import 'package:rango/data/remote/api_models.dart';
 import 'package:rango/ui/login/login_screen.dart';
 import 'package:rango/ui/signup/signup_screen.dart';
 import 'package:rango/ui/theme/rango_theme.dart';
 import 'package:rango/ui/welcome/welcome_screen.dart';
+
+import 'fake_backend.dart';
 
 void main() {
   void setSize(WidgetTester tester, Size size) {
@@ -18,9 +21,27 @@ void main() {
     (widget) => widget is TextField && widget.decoration?.hintText == hint,
   );
 
+  // Servidor de mentira: responde em 1 s e só aceita a senha da usuária de teste.
+  Future<Map<String, String>> fakeLogin(
+    String email,
+    String password,
+    bool keepConnected,
+  ) async {
+    await Future<void>.delayed(const Duration(milliseconds: 1000));
+    return password == 'rango123'
+        ? const {}
+        : const {'password': 'E-mail ou senha incorretos.'};
+  }
+
+  Future<Map<String, String>> fakeRegister(RegisterRequest request) async {
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    return const {};
+  }
+
   Future<void> pumpLogin(
     WidgetTester tester, {
-    ValueChanged<bool>? onSuccess,
+    Authenticate? authenticate,
+    VoidCallback? onSuccess,
     Size size = const Size(390, 844),
     ThemeData? theme,
   }) async {
@@ -30,7 +51,8 @@ void main() {
         theme: theme ?? RangoTheme.light,
         home: LoginScreen(
           onBack: () {},
-          onLoginSuccess: onSuccess ?? (_) {},
+          authenticate: authenticate ?? fakeLogin,
+          onLoginSuccess: onSuccess ?? () {},
           onForgotPassword: () {},
           onSignup: () {},
         ),
@@ -40,6 +62,7 @@ void main() {
 
   Future<void> pumpSignup(
     WidgetTester tester, {
+    Register? register,
     VoidCallback? onSuccess,
     Size size = const Size(390, 844),
     ThemeData? theme,
@@ -50,11 +73,21 @@ void main() {
         theme: theme ?? RangoTheme.light,
         home: SignupScreen(
           onBack: () {},
+          register: register ?? fakeRegister,
           onSignupSuccess: onSuccess ?? () {},
           onLogin: () {},
         ),
       ),
     );
+  }
+
+  Future<void> pumpApp(WidgetTester tester) async {
+    setSize(tester, const Size(390, 844));
+    setSavedSession(null);
+    await tester.pumpWidget(RangoApp(api: FakeBackend().api()));
+    // Abertura: confere a sessão salva e cai na Welcome.
+    await tester.pump();
+    await tester.pump();
   }
 
   Future<void> tapSubmit(WidgetTester tester) async {
@@ -71,6 +104,14 @@ void main() {
     await tester.enterText(field('(11) 90000-0000'), '(11) 98876-4410');
     await tester.enterText(field('Mínimo 6 caracteres'), 'rango123');
     await tester.enterText(field('Repita a senha'), 'rango123');
+    await tester.pump();
+  }
+
+  Future<void> acceptTerms(WidgetTester tester) async {
+    final terms = find.textContaining('Li e aceito');
+    await tester.ensureVisible(terms);
+    await tester.pump();
+    await tester.tap(terms);
     await tester.pump();
   }
 
@@ -109,7 +150,7 @@ void main() {
       expect(find.text('Informe sua senha.'), findsNothing);
     });
 
-    testWidgets('senha incorreta mostra o erro', (tester) async {
+    testWidgets('erro do servidor aparece no campo da senha', (tester) async {
       await pumpLogin(tester);
       await tester.enterText(field('voce@email.com'), 'marina@email.com');
       await tester.enterText(field('Sua senha'), 'errada');
@@ -118,13 +159,21 @@ void main() {
       expect(find.text('Entrando...'), findsOneWidget);
 
       await tester.pump(const Duration(milliseconds: 1000));
-      expect(find.text('Senha incorreta. Tente novamente.'), findsOneWidget);
+      expect(find.text('E-mail ou senha incorretos.'), findsOneWidget);
       expect(find.text('Entrar'), findsOneWidget);
     });
 
     testWidgets('senha correta passa por carregando e sucesso', (tester) async {
       bool? keepConnected;
-      await pumpLogin(tester, onSuccess: (value) => keepConnected = value);
+      var successes = 0;
+      await pumpLogin(
+        tester,
+        authenticate: (email, password, keep) {
+          keepConnected = keep;
+          return fakeLogin(email, password, keep);
+        },
+        onSuccess: () => successes++,
+      );
       await tester.enterText(field('voce@email.com'), 'marina@email.com');
       await tester.enterText(field('Sua senha'), 'rango123');
       await tester.tap(find.text('Manter conectado'));
@@ -133,10 +182,11 @@ void main() {
       await tester.tap(find.byType(FilledButton));
       await tester.pump(const Duration(milliseconds: 1000));
       expect(find.text('Bem-vinda!'), findsOneWidget);
-      expect(keepConnected, isNull);
+      expect(keepConnected, isFalse);
+      expect(successes, 0);
 
       await tester.pump(const Duration(milliseconds: 700));
-      expect(keepConnected, isFalse);
+      expect(successes, 1);
     });
 
     testWidgets('alterna a visibilidade da senha', (tester) async {
@@ -214,19 +264,56 @@ void main() {
 
     testWidgets('cria a conta com dados válidos', (tester) async {
       var created = 0;
-      await pumpSignup(tester, onSuccess: () => created++);
+      RegisterRequest? sent;
+      await pumpSignup(
+        tester,
+        register: (request) {
+          sent = request;
+          return fakeRegister(request);
+        },
+        onSuccess: () => created++,
+      );
       await fillSignup(tester);
-      final terms = find.textContaining('Li e aceito');
-      await tester.ensureVisible(terms);
-      await tester.pump();
-      await tester.tap(terms);
-      await tester.pump();
+      await acceptTerms(tester);
 
       await tapSubmit(tester);
       expect(find.text('Criando conta...'), findsOneWidget);
 
       await tester.pump(const Duration(milliseconds: 1100));
       expect(created, 1);
+      expect(sent?.toJson(), {
+        'name': 'Marina Alves',
+        'email': 'marina.alves@email.com',
+        'phone': '(11) 98876-4410',
+        'password': 'rango123',
+        'passwordConfirmation': 'rango123',
+        'acceptTerms': true,
+        'keepSignedIn': true,
+      });
+    });
+
+    testWidgets('erro do servidor aparece no campo e some ao editar', (
+      tester,
+    ) async {
+      var created = 0;
+      await pumpSignup(
+        tester,
+        register: (_) async => const {
+          'email': 'Este e-mail já está cadastrado.',
+        },
+        onSuccess: () => created++,
+      );
+      await fillSignup(tester);
+      await acceptTerms(tester);
+
+      await tapSubmit(tester);
+      await tester.pump();
+      expect(created, 0);
+      expect(find.text('Este e-mail já está cadastrado.'), findsOneWidget);
+
+      await tester.enterText(field('voce@email.com'), 'nova@email.com');
+      await tester.pump();
+      expect(find.text('Este e-mail já está cadastrado.'), findsNothing);
     });
 
     testWidgets('tela pequena não estoura', (tester) async {
@@ -245,8 +332,7 @@ void main() {
 
   group('Navegação', () {
     testWidgets('segue a pilha do protótipo', (tester) async {
-      setSize(tester, const Size(390, 844));
-      await tester.pumpWidget(const RangoApp());
+      await pumpApp(tester);
 
       await tester.tap(find.text('Entrar'));
       await tester.pump();
@@ -268,8 +354,7 @@ void main() {
     testWidgets('voltar do sistema retorna para a tela anterior', (
       tester,
     ) async {
-      setSize(tester, const Size(390, 844));
-      await tester.pumpWidget(const RangoApp());
+      await pumpApp(tester);
       await tester.tap(find.text('Criar conta'));
       await tester.pump();
 
@@ -280,8 +365,7 @@ void main() {
     });
 
     testWidgets('sair durante o envio não gera erro', (tester) async {
-      setSize(tester, const Size(390, 844));
-      await tester.pumpWidget(const RangoApp());
+      await pumpApp(tester);
       await tester.tap(find.text('Entrar'));
       await tester.pump();
       await tester.enterText(field('voce@email.com'), 'marina@email.com');
@@ -289,6 +373,7 @@ void main() {
       await tapSubmit(tester);
 
       await tester.tap(find.byTooltip('Voltar'));
+      await tester.pump();
       await tester.pump(const Duration(seconds: 2));
 
       expect(tester.takeException(), isNull);
