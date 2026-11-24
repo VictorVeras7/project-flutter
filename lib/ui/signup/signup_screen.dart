@@ -1,27 +1,32 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../data/remote/api_models.dart';
 import '../components/auth_components.dart';
 
 enum _SignupField {
   name(
+    'name',
     'Nome completo',
     'Maria Silva',
     Icons.person_outline_rounded,
     TextInputType.name,
   ),
   email(
+    'email',
     'E-mail',
     'voce@email.com',
     Icons.mail_outline_rounded,
     TextInputType.emailAddress,
   ),
   phone(
+    'phone',
     'Telefone',
     '(11) 90000-0000',
     Icons.call_outlined,
     TextInputType.phone,
   ),
   password(
+    'password',
     'Senha',
     'Mínimo 6 caracteres',
     Icons.lock_outline_rounded,
@@ -29,6 +34,7 @@ enum _SignupField {
     obscure: true,
   ),
   confirmPassword(
+    'passwordConfirmation',
     'Confirmar senha',
     'Repita a senha',
     Icons.lock_reset_rounded,
@@ -37,6 +43,7 @@ enum _SignupField {
   );
 
   const _SignupField(
+    this.apiField,
     this.label,
     this.hint,
     this.icon,
@@ -44,6 +51,8 @@ enum _SignupField {
     this.obscure = false,
   });
 
+  // Nome do campo nos erros da API (`details[].field`).
+  final String apiField;
   final String label;
   final String hint;
   final IconData icon;
@@ -51,15 +60,22 @@ enum _SignupField {
   final bool obscure;
 }
 
+// Cria a conta no servidor. Devolve os erros por campo da API; vazio = sucesso.
+typedef Register = Future<Map<String, String>> Function(
+  RegisterRequest request,
+);
+
 class SignupScreen extends StatefulWidget {
   const SignupScreen({
     super.key,
     required this.onBack,
+    required this.register,
     required this.onSignupSuccess,
     required this.onLogin,
   });
 
   final VoidCallback onBack;
+  final Register register;
   final VoidCallback onSignupSuccess;
   final VoidCallback onLogin;
 
@@ -74,6 +90,8 @@ class _SignupScreenState extends State<SignupScreen> {
   var _acceptedTerms = false;
   var _touched = false;
   var _loading = false;
+  // Erros vindos do servidor (ex.: e-mail já cadastrado); somem ao editar o campo.
+  var _serverErrors = <_SignupField, String>{};
 
   @override
   void dispose() {
@@ -91,6 +109,7 @@ class _SignupScreenState extends State<SignupScreen> {
     final digits = _text(_SignupField.phone).replaceAll(RegExp(r'\D'), '');
 
     return {
+      ..._serverErrors,
       if (_text(_SignupField.name).trim().length < 3)
         _SignupField.name: 'Informe seu nome completo.',
       if (!isValidEmail(_text(_SignupField.email)))
@@ -121,11 +140,24 @@ class _SignupScreenState extends State<SignupScreen> {
     if (!_loading) return;
 
     FocusScope.of(context).unfocus();
-    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    final errors = await widget.register(
+      RegisterRequest(
+        name: _text(_SignupField.name).trim(),
+        email: _text(_SignupField.email).trim(),
+        phone: _text(_SignupField.phone),
+        password: _text(_SignupField.password),
+        passwordConfirmation: _text(_SignupField.confirmPassword),
+      ),
+    );
     if (!mounted) return;
 
-    setState(() => _loading = false);
-    widget.onSignupSuccess();
+    setState(() {
+      _loading = false;
+      _serverErrors = {
+        for (final field in _SignupField.values) field: ?errors[field.apiField],
+      };
+    });
+    if (errors.isEmpty) widget.onSignupSuccess();
   }
 
   @override
@@ -177,7 +209,8 @@ class _SignupScreenState extends State<SignupScreen> {
                         textInputAction: field == _SignupField.confirmPassword
                             ? TextInputAction.done
                             : TextInputAction.next,
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (_) =>
+                            setState(() => _serverErrors.remove(field)),
                         onSubmitted: field == _SignupField.confirmPassword
                             ? (_) => _submit()
                             : null,
