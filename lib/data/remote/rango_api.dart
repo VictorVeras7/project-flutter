@@ -207,6 +207,25 @@ class RangoApi {
     ),
   );
 
+  // Pedidos
+
+  // "Em andamento" ou "Anteriores", mais recentes primeiro.
+  Future<OrderListDto> orders(String group, {int pageSize = 50}) async =>
+      OrderListDto.fromJson(
+        await _call('GET', '/orders?group=$group&pageSize=$pageSize'),
+      );
+
+  // O servidor avança a etapa do pedido na leitura (simulação a cada 20 s).
+  Future<OrderDetailDto> order(String code) async =>
+      OrderDetailDto.fromJson(await _call('GET', '/orders/$code'));
+
+  // Substitui o carrinho pelos itens do pedido, com os preços atuais.
+  Future<ReorderDto> reorder(String code) async =>
+      ReorderDto.fromJson(await _call('POST', '/orders/$code/reorder'));
+
+  Future<FavoriteListDto> favorites() async =>
+      FavoriteListDto.fromJson(await _call('GET', '/favorites'));
+
   // Infra
 
   // Envia a requisição; se o access token venceu, renova a sessão e tenta de novo uma vez.
