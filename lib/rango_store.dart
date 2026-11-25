@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 
 import 'data/cart.dart';
+import 'data/checkout.dart';
+import 'data/order.dart';
 import 'data/product.dart';
 import 'data/remote/api_models.dart';
 import 'data/remote/mappers.dart';
@@ -36,6 +38,14 @@ class RangoStore extends ChangeNotifier {
   var cart = Cart.empty;
   // Primeira carga do carrinho nesta sessão: mostra o carregamento.
   var cartLoading = false;
+  // Checkout: endereço e pagamento escolhidos ficam aqui até confirmar o pedido.
+  var addresses = <Address>[];
+  var paymentMethods = <PaymentMethod>[];
+  int? selectedAddressId;
+  int? selectedPaymentId;
+  var checkoutLoading = false;
+  var placingOrder = false;
+  PlacedOrder? lastOrder;
   StoreMessage? message;
 
   String? _openProductId;
@@ -94,6 +104,13 @@ class RangoStore extends ChangeNotifier {
     _openProductId = null;
     cart = Cart.empty;
     cartLoading = false;
+    addresses = [];
+    paymentMethods = [];
+    selectedAddressId = null;
+    selectedPaymentId = null;
+    checkoutLoading = false;
+    placingOrder = false;
+    lastOrder = null;
   }
 
   // Home
@@ -254,6 +271,153 @@ class RangoStore extends ChangeNotifier {
       );
     });
     return applied;
+  }
+
+  // Checkout
+
+  Address? get selectedAddress =>
+      addresses.where((a) => a.id == selectedAddressId).firstOrNull;
+
+  PaymentMethod? get selectedPayment =>
+      paymentMethods.where((p) => p.id == selectedPaymentId).firstOrNull;
+
+  // Endereços, formas de pagamento e o carrinho atualizado, em paralelo.
+  Future<void> loadCheckout() async {
+    checkoutLoading = addresses.isEmpty || paymentMethods.isEmpty;
+    notifyListeners();
+    await _safely(() async {
+      final (addressList, payments, cartDto) = await (
+        _api.addresses(),
+        _api.paymentMethods(),
+        _api.cart(),
+      ).wait;
+      _setAddresses(addressList);
+      paymentMethods = [for (final p in payments) p.toPaymentMethod()];
+      // Mantém a escolha anterior; senão, a primeira (PIX, como no protótipo).
+      if (selectedPayment == null && paymentMethods.isNotEmpty) {
+        selectedPaymentId = paymentMethods.first.id;
+      }
+      _setCart(cartDto);
+    });
+    checkoutLoading = false;
+    notifyListeners();
+  }
+
+  // Só as listas da tela de endereços (aberta também pela Home).
+  Future<void> loadAddresses() async {
+    checkoutLoading = addresses.isEmpty;
+    notifyListeners();
+    await _safely(() async => _setAddresses(await _api.addresses()));
+    checkoutLoading = false;
+    notifyListeners();
+  }
+
+  void _setAddresses(List<AddressDto> list) {
+    addresses = [for (final a in list) a.toAddress()];
+    // A escolha local vale até confirmar; sem escolha, usa a do servidor.
+    if (selectedAddress == null) {
+      selectedAddressId = addresses
+          .where((a) => a.selected)
+          .followedBy(addresses)
+          .firstOrNull
+          ?.id;
+    }
+  }
+
+  void chooseAddress(int id) {
+    selectedAddressId = id;
+    notifyListeners();
+  }
+
+  void choosePayment(int id) {
+    selectedPaymentId = id;
+    notifyListeners();
+  }
+
+  // "Usar este endereço": salva a escolha no servidor e atualiza a Home.
+  Future<bool> confirmAddress() async {
+    final id = selectedAddressId;
+    if (id == null) {
+      _show('Cadastre um endereço de entrega.', MessageKind.error);
+      return false;
+    }
+    var saved = false;
+    await _safely(() async {
+      final dto = await _api.selectAddress(id);
+      address = dto.street;
+      addresses = [
+        for (final a in addresses)
+          Address(
+            id: a.id,
+            label: a.label,
+            street: a.street,
+            line: a.line,
+            cityLine: a.cityLine,
+            selected: a.id == id,
+          ),
+      ];
+      saved = true;
+      _show('Endereço atualizado.', MessageKind.success);
+    });
+    return saved;
+  }
+
+  // Devolve os erros por campo; vazio quando salvou.
+  Future<Map<String, String>> createAddress(AddressForm form) async {
+    try {
+      final dto = await _api.createAddress(
+        // O protótipo não pede nome para o endereço novo.
+        label: 'Outro',
+        cep: form.cep,
+        street: form.street,
+        complement: form.complement,
+        neighborhood: form.neighborhood,
+        city: form.city,
+      );
+      final created = dto.toAddress();
+      addresses = [...addresses, created];
+      selectedAddressId = created.id;
+      _show('Endereço salvo.', MessageKind.success);
+      return const {};
+    } on ApiException catch (e) {
+      if (e.fields.isNotEmpty) return e.fields;
+      _show(e.message, MessageKind.error);
+      return {'': e.message};
+    } on Object {
+      _show('Algo deu errado. Tente novamente.', MessageKind.error);
+      return const {'': 'Algo deu errado. Tente novamente.'};
+    }
+  }
+
+  // Confirma o pedido. Devolve true se o pedido foi criado.
+  Future<bool> placeOrder() async {
+    final addressId = selectedAddressId;
+    final paymentId = selectedPaymentId;
+    if (addressId == null) {
+      _show('Cadastre ou selecione um endereço de entrega.', MessageKind.error);
+      return false;
+    }
+    if (paymentId == null) {
+      _show('Escolha uma forma de pagamento.', MessageKind.error);
+      return false;
+    }
+    placingOrder = true;
+    notifyListeners();
+    var placed = false;
+    await _safely(() async {
+      final order = await _api.placeOrder(
+        addressId: addressId,
+        paymentMethodId: paymentId,
+      );
+      lastOrder = order.toPlacedOrder();
+      // O servidor esvaziou o carrinho.
+      cart = Cart.empty;
+      cartCount = 0;
+      placed = true;
+    });
+    placingOrder = false;
+    notifyListeners();
+    return placed;
   }
 
   void _setCart(CartDto dto) {
