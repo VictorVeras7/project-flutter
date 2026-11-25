@@ -196,10 +196,10 @@ class RangoApi {
   ];
 
   // Transforma o carrinho do servidor em pedido; o servidor esvazia o carrinho.
-  Future<OrderDto> placeOrder({
+  Future<OrderDetailDto> placeOrder({
     required int addressId,
     required int paymentMethodId,
-  }) async => OrderDto.fromJson(
+  }) async => OrderDetailDto.fromJson(
     await _call(
       'POST',
       '/orders',

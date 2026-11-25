@@ -242,20 +242,124 @@ class PaymentMethodDto {
   final String detail;
 }
 
-// Pedido criado: só os campos da tela de pedido realizado.
-class OrderDto {
-  OrderDto.fromJson(Json json)
+// Pedidos
+
+class OrderSummaryDto {
+  OrderSummaryDto.fromJson(Json json)
     : code = json['code'] as String,
-      itemCount = json['itemCount'] as int,
+      status = json['status'] as String,
+      statusLabel = json['statusLabel'] as String,
+      step = json['step'] as int,
+      createdAt = DateTime.parse(json['createdAt'] as String),
       total = (json['total'] as num).toDouble(),
-      minMinutes = (json['estimatedDelivery'] as Json)['minMinutes'] as int,
-      maxMinutes = (json['estimatedDelivery'] as Json)['maxMinutes'] as int,
-      paymentLabel = (json['payment'] as Json)['label'] as String;
+      itemCount = json['itemCount'] as int,
+      itemsSummary = json['itemsSummary'] as String,
+      imageHue = ((json['thumbnail'] as Json)['imageHue'] as num).toDouble();
 
   final String code;
-  final int itemCount;
+  final String status;
+  final String statusLabel;
+  final int step;
+  final DateTime createdAt;
   final double total;
+  final int itemCount;
+  final String itemsSummary;
+  final double imageHue;
+}
+
+class OrderListDto {
+  OrderListDto.fromJson(Json json)
+    : data = _list(json['data'], OrderSummaryDto.fromJson),
+      total = (json['meta'] as Json)['total'] as int;
+
+  final List<OrderSummaryDto> data;
+  // Total do filtro, usado no badge de pedidos em andamento.
+  final int total;
+}
+
+class TimelineStepDto {
+  TimelineStepDto.fromJson(Json json)
+    : step = json['step'] as int,
+      label = json['label'] as String,
+      state = json['state'] as String,
+      reachedAt = switch (json['reachedAt']) {
+        final String value => DateTime.parse(value),
+        _ => null,
+      };
+
+  final int step;
+  final String label;
+  final String state;
+  final DateTime? reachedAt;
+}
+
+class OrderItemDto {
+  OrderItemDto.fromJson(Json json)
+    : name = json['name'] as String,
+      restaurant = json['restaurant'] as String? ?? '',
+      imageHue = (json['imageHue'] as num).toDouble(),
+      quantity = json['quantity'] as int,
+      total = (json['total'] as num).toDouble();
+
+  final String name;
+  final String restaurant;
+  final double imageHue;
+  final int quantity;
+  final double total;
+}
+
+// Detalhe do pedido; também é a resposta de POST /orders.
+class OrderDetailDto {
+  OrderDetailDto.fromJson(Json json)
+    : summary = OrderSummaryDto.fromJson(json),
+      hint = json['hint'] as String,
+      timeline = _list(json['timeline'], TimelineStepDto.fromJson),
+      minMinutes = (json['estimatedDelivery'] as Json)['minMinutes'] as int,
+      maxMinutes = (json['estimatedDelivery'] as Json)['maxMinutes'] as int,
+      items = _list(json['items'], OrderItemDto.fromJson),
+      addressLine = (json['address'] as Json)['line'] as String,
+      paymentType = (json['payment'] as Json)['type'] as String,
+      paymentLabel = (json['payment'] as Json)['label'] as String,
+      subtotal = ((json['amounts'] as Json)['subtotal'] as num).toDouble(),
+      deliveryFee = ((json['amounts'] as Json)['deliveryFee'] as num)
+          .toDouble(),
+      discount = ((json['amounts'] as Json)['discount'] as num).toDouble(),
+      courierName = (json['courier'] as Json)['name'] as String,
+      courierVehicle = (json['courier'] as Json)['vehicle'] as String;
+
+  final OrderSummaryDto summary;
+  final String hint;
+  final List<TimelineStepDto> timeline;
   final int minMinutes;
   final int maxMinutes;
+  final List<OrderItemDto> items;
+  final String addressLine;
+  final String paymentType;
   final String paymentLabel;
+  final double subtotal;
+  final double deliveryFee;
+  final double discount;
+  final String courierName;
+  final String courierVehicle;
+}
+
+// "Pedir novamente": o carrinho novo e os produtos que saíram do cardápio.
+class ReorderDto {
+  ReorderDto.fromJson(Json json)
+    : cart = CartDto.fromJson(json['cart'] as Json),
+      skippedProductIds = [
+        for (final id in (json['skippedProductIds'] as List? ?? const []))
+          id as String,
+      ];
+
+  final CartDto cart;
+  final List<String> skippedProductIds;
+}
+
+class FavoriteListDto {
+  FavoriteListDto.fromJson(Json json)
+    : count = (json['data'] as List? ?? const []).length;
+
+  // A barra inferior só usa a quantidade.
+  final int count;
 }
