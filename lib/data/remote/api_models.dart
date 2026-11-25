@@ -137,11 +137,75 @@ class ProductListDto {
   final List<ProductDto> data;
 }
 
-// Carrinho: a Home só usa o total de itens (badge da sacola).
+class AddonDto {
+  AddonDto.fromJson(Json json)
+    : id = json['id'] as String,
+      name = json['name'] as String,
+      price = (json['price'] as num).toDouble();
+
+  final String id;
+  final String name;
+  final double price;
+}
+
+class ProductDetailDto {
+  ProductDetailDto.fromJson(Json json)
+    : summary = ProductDto.fromJson(json),
+      ingredients = json['ingredients'] as String,
+      addons = _list(json['addons'], AddonDto.fromJson);
+
+  final ProductDto summary;
+  final String ingredients;
+  final List<AddonDto> addons;
+}
+
+// Carrinho: toda operação devolve o carrinho completo atualizado.
+
+class CartItemDto {
+  CartItemDto.fromJson(Json json)
+    : id = json['id'] as int,
+      productId = (json['product'] as Json)['id'] as String,
+      name = (json['product'] as Json)['name'] as String,
+      imageHue = ((json['product'] as Json)['imageHue'] as num).toDouble(),
+      isAvailable = (json['product'] as Json)['isAvailable'] as bool? ?? true,
+      quantity = json['quantity'] as int,
+      addons = _list(json['addons'], AddonDto.fromJson),
+      notes = json['notes'] as String? ?? '',
+      unitPrice = (json['unitPrice'] as num).toDouble(),
+      total = (json['total'] as num).toDouble();
+
+  final int id;
+  final String productId;
+  final String name;
+  final double imageHue;
+  final bool isAvailable;
+  final int quantity;
+  final List<AddonDto> addons;
+  final String notes;
+  final double unitPrice;
+  final double total;
+}
 
 class CartDto {
   CartDto.fromJson(Json json)
-    : itemCount = (json['summary'] as Json)['itemCount'] as int;
+    : items = _list(json['items'], CartItemDto.fromJson),
+      couponCode = (json['coupon'] as Json?)?['code'] as String?,
+      couponApplied = (json['coupon'] as Json?)?['applied'] as bool? ?? false,
+      couponPercentOff = (json['coupon'] as Json?)?['percentOff'] as int? ?? 0,
+      itemCount = (json['summary'] as Json)['itemCount'] as int,
+      subtotal = ((json['summary'] as Json)['subtotal'] as num).toDouble(),
+      deliveryFee = ((json['summary'] as Json)['deliveryFee'] as num)
+          .toDouble(),
+      discount = ((json['summary'] as Json)['discount'] as num).toDouble(),
+      total = ((json['summary'] as Json)['total'] as num).toDouble();
 
+  final List<CartItemDto> items;
+  final String? couponCode;
+  final bool couponApplied;
+  final int couponPercentOff;
   final int itemCount;
+  final double subtotal;
+  final double deliveryFee;
+  final double discount;
+  final double total;
 }

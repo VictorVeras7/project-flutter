@@ -106,24 +106,53 @@ class RangoApi {
         await _call('GET', '/products?category=$categorySlug&pageSize=50'),
       ).data;
 
+  Future<ProductDetailDto> product(String productId) async =>
+      ProductDetailDto.fromJson(await _call('GET', '/products/$productId'));
+
   Future<void> setFavorite(String productId, bool favorite) =>
       _call(favorite ? 'PUT' : 'DELETE', '/favorites/$productId');
 
-  // Carrinho
+  // Carrinho: toda chamada devolve o carrinho completo atualizado.
 
-  Future<CartDto> addToCart(String productId, int quantity) async =>
+  Future<CartDto> cart() async => CartDto.fromJson(await _call('GET', '/cart'));
+
+  // Mesmo produto com os mesmos adicionais soma na linha existente.
+  Future<CartDto> addToCart(
+    String productId, {
+    int quantity = 1,
+    List<String> addonIds = const [],
+    String notes = '',
+  }) async => CartDto.fromJson(
+    await _call(
+      'POST',
+      '/cart/items',
+      body: {
+        'productId': productId,
+        'quantity': quantity,
+        'addonIds': addonIds,
+        'notes': notes,
+      },
+    ),
+  );
+
+  Future<CartDto> setCartQuantity(int itemId, int quantity) async =>
       CartDto.fromJson(
         await _call(
-          'POST',
-          '/cart/items',
-          body: {
-            'productId': productId,
-            'quantity': quantity,
-            'addonIds': <String>[],
-            'notes': '',
-          },
+          'PATCH',
+          '/cart/items/$itemId',
+          body: {'quantity': quantity},
         ),
       );
+
+  Future<CartDto> removeCartItem(int itemId) async =>
+      CartDto.fromJson(await _call('DELETE', '/cart/items/$itemId'));
+
+  Future<CartDto> clearCart() async =>
+      CartDto.fromJson(await _call('DELETE', '/cart'));
+
+  Future<CartDto> applyCoupon(String code) async => CartDto.fromJson(
+    await _call('PUT', '/cart/coupon', body: {'code': code}),
+  );
 
   // Infra
 

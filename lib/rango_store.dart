@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'data/cart.dart';
 import 'data/product.dart';
 import 'data/remote/api_models.dart';
 import 'data/remote/mappers.dart';
@@ -28,7 +29,16 @@ class RangoStore extends ChangeNotifier {
   final categoryProducts = <String, List<Product>>{};
   var favoriteIds = <String>{};
   var homeLoading = false;
+  // Detalhe do produto aberto. `productPreview` vem das listas da Home e
+  // desenha o topo da tela enquanto o detalhe carrega.
+  Product? productPreview;
+  ProductDetail? productDetail;
+  var cart = Cart.empty;
+  // Primeira carga do carrinho nesta sessão: mostra o carregamento.
+  var cartLoading = false;
   StoreMessage? message;
+
+  String? _openProductId;
 
   var _categorySlugs = <String, String>{};
 
@@ -79,6 +89,11 @@ class RangoStore extends ChangeNotifier {
     categoryProducts.clear();
     favoriteIds = {};
     _categorySlugs = {};
+    productPreview = null;
+    productDetail = null;
+    _openProductId = null;
+    cart = Cart.empty;
+    cartLoading = false;
   }
 
   // Home
@@ -130,10 +145,121 @@ class RangoStore extends ChangeNotifier {
     });
   }
 
-  Future<void> addToCart(String productId) => _safely(() async {
-    cartCount = (await _api.addToCart(productId, 1)).itemCount;
-    _show('Produto adicionado ao carrinho.', MessageKind.success);
+  // Produto
+
+  // Busca ingredientes e adicionais. Devolve false se não deu para abrir.
+  Future<bool> openProduct(String id) async {
+    _openProductId = id;
+    productPreview = _findProduct(id);
+    productDetail = null;
+    notifyListeners();
+    try {
+      final dto = await _api.product(id);
+      // O usuário já saiu ou abriu outro produto.
+      if (_openProductId != id) return true;
+      productDetail = dto.toDetail();
+      _setFavorite(id, dto.summary.isFavorite);
+      return true;
+    } on Object catch (e) {
+      if (_openProductId != id) return true;
+      _show(_errorText(e), MessageKind.error);
+      return false;
+    }
+  }
+
+  void closeProduct() {
+    _openProductId = null;
+    productPreview = null;
+    productDetail = null;
+  }
+
+  Product? _findProduct(String id) {
+    for (final list in [...sections.values, ...categoryProducts.values]) {
+      for (final product in list) {
+        if (product.id == id) return product;
+      }
+    }
+    return null;
+  }
+
+  // Carrinho
+
+  Future<void> loadCart() async {
+    // Mostra o carregamento só na primeira vez; depois atualiza por baixo.
+    cartLoading = cart.isEmpty && cartCount > 0;
+    notifyListeners();
+    await _safely(() async => _setCart(await _api.cart()));
+    cartLoading = false;
+    notifyListeners();
+  }
+
+  // Devolve true se o produto entrou no carrinho.
+  Future<bool> addToCart(
+    String productId, {
+    int quantity = 1,
+    List<String> addonIds = const [],
+    String notes = '',
+  }) async {
+    var added = false;
+    await _safely(() async {
+      _setCart(
+        await _api.addToCart(
+          productId,
+          quantity: quantity,
+          addonIds: addonIds,
+          notes: notes.trim(),
+        ),
+      );
+      added = true;
+      _show('Produto adicionado ao carrinho.', MessageKind.success);
+    });
+    return added;
+  }
+
+  // + e − da linha; abaixo de 1 remove, como no protótipo.
+  Future<void> changeQuantity(CartLine line, int delta) {
+    final quantity = line.quantity + delta;
+    return _safely(() async {
+      _setCart(
+        quantity < 1
+            ? await _api.removeCartItem(line.id)
+            : await _api.setCartQuantity(line.id, quantity),
+      );
+    });
+  }
+
+  Future<void> removeLine(CartLine line) => _safely(() async {
+    _setCart(await _api.removeCartItem(line.id));
+    _show('Produto removido.', MessageKind.info);
   });
+
+  Future<void> clearCart() => _safely(() async {
+    _setCart(await _api.clearCart());
+    _show('Carrinho esvaziado.', MessageKind.info);
+  });
+
+  // Devolve true se o cupom foi aplicado.
+  Future<bool> applyCoupon(String code) async {
+    if (code.trim().isEmpty) {
+      _show('Informe o cupom.', MessageKind.error);
+      return false;
+    }
+    var applied = false;
+    await _safely(() async {
+      _setCart(await _api.applyCoupon(code.trim()));
+      applied = true;
+      _show(
+        'Cupom ${cart.couponCode} aplicado · ${cart.couponPercentOff}% off.',
+        MessageKind.success,
+      );
+    });
+    return applied;
+  }
+
+  void _setCart(CartDto dto) {
+    cart = dto.toCart();
+    cartCount = cart.itemCount;
+  }
 
   void clearMessage() => message = null;
 
