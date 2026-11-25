@@ -288,7 +288,10 @@ class AuthSubmitButton extends StatelessWidget {
               ),
             ),
           if (success) const Icon(Icons.check_circle_outline_rounded, size: 22),
-          Text(label),
+          // Rótulos longos ("Processando pagamento...") não estouram em tela estreita.
+          Flexible(
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
         ],
       ),
     );
