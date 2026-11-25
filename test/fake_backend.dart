@@ -28,15 +28,47 @@ Map<String, Object?> product(
   'isFavorite': favorite,
 };
 
+const addons = [
+  {'id': 'a1', 'name': 'Bacon extra', 'price': 4},
+  {'id': 'a2', 'name': 'Cheddar extra', 'price': 3.5},
+];
+
+// Linha do carrinho guardada no back-end falso.
+class FakeLine {
+  FakeLine(this.id, this.productId, this.quantity, this.addonIds, this.notes);
+
+  final int id;
+  final String productId;
+  int quantity;
+  final List<String> addonIds;
+  String notes;
+}
+
 // Back-end em memória com o mesmo contrato da API local (porta 3333).
+// Carrinho com as regras do servidor: entrega de R$ 7,90, grátis a partir
+// de R$ 60, e o cupom RANGO10 com 10% sobre o subtotal.
 class FakeBackend {
   FakeBackend({this.homeDelay = Duration.zero});
 
   final Duration homeDelay;
   final requests = <String>[];
-  var cartCount = 0;
+  final cart = <FakeLine>[];
+  String? coupon;
+  var _nextLineId = 1;
   var expireNextHome = false;
   final favorites = <String>{'p2'};
+
+  int get cartCount => cart.fold(0, (sum, line) => sum + line.quantity);
+
+  // Coloca um item no carrinho antes de abrir o app.
+  void seedCart(
+    String productId, {
+    int quantity = 1,
+    List<String> addonIds = const [],
+    String notes = '',
+  }) => cart.add(
+    FakeLine(_nextLineId++, productId, quantity, addonIds, notes),
+  );
 
   late final products = [
     product('p1', 'Burger duplo cheddar', 'Pizza', [
@@ -111,12 +143,67 @@ class FakeBackend {
               if ((p['category'] as Map)['slug'] == slug) p,
           ],
         });
+      case ('GET', '/cart'):
+        return _cart();
       case ('POST', '/cart/items'):
-        cartCount += body['quantity'] as int;
-        return _json({
-          'items': const [],
-          'summary': {'itemCount': cartCount},
-        });
+        final productId = body['productId'] as String;
+        final addonIds = [...(body['addonIds'] as List).cast<String>()]
+          ..sort();
+        final notes = body['notes'] as String;
+        final quantity = body['quantity'] as int;
+        final existing = cart
+            .where(
+              (l) =>
+                  l.productId == productId &&
+                  l.addonIds.join(',') == addonIds.join(','),
+            )
+            .firstOrNull;
+        if (existing != null) {
+          existing.quantity += quantity;
+          if (notes.isNotEmpty) existing.notes = notes;
+        } else {
+          seedCart(
+            productId,
+            quantity: quantity,
+            addonIds: addonIds,
+            notes: notes,
+          );
+        }
+        return _cart(201);
+      case ('DELETE', '/cart'):
+        cart.clear();
+        return _cart();
+      case ('PUT', '/cart/coupon'):
+        if ((body['code'] as String).toUpperCase() != 'RANGO10') {
+          return _error(422, 'INVALID_COUPON', 'Cupom inválido.');
+        }
+        coupon = 'RANGO10';
+        return _cart();
+    }
+    if (path.startsWith('/cart/items/')) {
+      final id = int.parse(path.split('/').last);
+      final line = cart.where((l) => l.id == id).firstOrNull;
+      if (line == null) {
+        return _error(404, 'NOT_FOUND', 'Item do carrinho não encontrado.');
+      }
+      if (request.method == 'DELETE') {
+        cart.remove(line);
+      } else {
+        line.quantity = body['quantity'] as int;
+      }
+      return _cart();
+    }
+    if (request.method == 'GET' && path.startsWith('/products/')) {
+      final id = path.split('/').last;
+      final found = _withFavorites().where((p) => p['id'] == id).firstOrNull;
+      if (found == null) {
+        return _error(404, 'PRODUCT_NOT_FOUND', 'Produto não encontrado.');
+      }
+      return _json({
+        ...found,
+        'ingredients': 'Pão brioche, cheddar inglês. Molho da casa.',
+        'addons': addons,
+      });
     }
     if (path.startsWith('/favorites/')) {
       final id = path.split('/').last;
@@ -124,6 +211,62 @@ class FakeBackend {
       return http.Response('', 204);
     }
     return _error(404, 'NOT_FOUND', 'Rota não encontrada.');
+  }
+
+  http.Response _cart([int status = 200]) {
+    final items = [
+      for (final line in cart) _item(line),
+    ];
+    final subtotal = items.fold<double>(0, (s, i) => s + (i['total'] as num));
+    final fee = subtotal == 0 || subtotal >= 60 ? 0.0 : 7.9;
+    final discount = coupon == null ? 0.0 : subtotal * 0.1;
+    return _json({
+      'items': items,
+      'coupon': coupon == null
+          ? null
+          : {
+              'code': coupon,
+              'description': '10% de desconto',
+              'percentOff': 10,
+              'minSubtotal': 0,
+              'applied': subtotal > 0,
+            },
+      'summary': {
+        'itemCount': cartCount,
+        'subtotal': subtotal,
+        'deliveryFee': fee,
+        'discount': discount,
+        'total': subtotal + fee - discount,
+        'freeDeliveryThreshold': 60,
+      },
+    }, status);
+  }
+
+  Map<String, Object?> _item(FakeLine line) {
+    final p = products.firstWhere((p) => p['id'] == line.productId);
+    final chosen = [
+      for (final a in addons)
+        if (line.addonIds.contains(a['id'])) a,
+    ];
+    final unit =
+        (p['price'] as num) +
+        chosen.fold<num>(0, (s, a) => s + (a['price'] as num));
+    return {
+      'id': line.id,
+      'product': {
+        'id': p['id'],
+        'name': p['name'],
+        'restaurant': p['restaurant'],
+        'imageUrl': null,
+        'imageHue': p['imageHue'],
+        'isAvailable': true,
+      },
+      'quantity': line.quantity,
+      'addons': chosen,
+      'notes': line.notes,
+      'unitPrice': unit,
+      'total': unit * line.quantity,
+    };
   }
 
   List<Map<String, Object?>> _withFavorites() => [
