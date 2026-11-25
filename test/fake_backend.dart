@@ -60,15 +60,64 @@ class FakeBackend {
 
   int get cartCount => cart.fold(0, (sum, line) => sum + line.quantity);
 
+  // Endereços como no seed do servidor; o primeiro é o selecionado.
+  final addresses = <Map<String, Object?>>[
+    _address(1, 'Casa', 'Rua das Palmeiras, 128', 'apto 42', 'Pinheiros'),
+    _address(2, 'Trabalho', 'Av. Faria Lima, 3400', '9º andar', 'Itaim Bibi'),
+  ];
+  var selectedAddressId = 1;
+  // Pedidos criados: addressId e paymentMethodId enviados.
+  final orders = <Map<String, Object?>>[];
+
+  static const paymentMethods = [
+    {'id': 1, 'type': 'pix', 'label': 'PIX', 'detail': 'Aprovação imediata'},
+    {
+      'id': 2,
+      'type': 'credit',
+      'label': 'Cartão de crédito',
+      'detail': 'Visa •••• 4410',
+    },
+    {
+      'id': 4,
+      'type': 'cash',
+      'label': 'Dinheiro',
+      'detail': 'Pagamento na entrega',
+    },
+  ];
+
+  static Map<String, Object?> _address(
+    int id,
+    String label,
+    String street,
+    String? complement,
+    String neighborhood, [
+    String city = 'São Paulo',
+  ]) => {
+    'id': id,
+    'label': label,
+    'cep': '05422-030',
+    'street': street,
+    'complement': complement,
+    'neighborhood': neighborhood,
+    'city': city,
+    'line': complement == null || complement.isEmpty
+        ? street
+        : '$street · $complement',
+    'cityLine': '$neighborhood · $city',
+  };
+
+  List<Map<String, Object?>> _addressList() => [
+    for (final a in addresses)
+      {...a, 'isSelected': a['id'] == selectedAddressId},
+  ];
+
   // Coloca um item no carrinho antes de abrir o app.
   void seedCart(
     String productId, {
     int quantity = 1,
     List<String> addonIds = const [],
     String notes = '',
-  }) => cart.add(
-    FakeLine(_nextLineId++, productId, quantity, addonIds, notes),
-  );
+  }) => cart.add(FakeLine(_nextLineId++, productId, quantity, addonIds, notes));
 
   late final products = [
     product('p1', 'Burger duplo cheddar', 'Pizza', [
@@ -117,7 +166,11 @@ class FakeBackend {
         }
         return _json({
           'user': {'name': 'Marina Alves'},
-          'selectedAddress': {'street': 'Rua das Palmeiras, 128'},
+          'selectedAddress': {
+            'street': addresses.firstWhere(
+              (a) => a['id'] == selectedAddressId,
+            )['street'],
+          },
           'cartItemCount': cartCount,
           'unreadNotifications': 2,
           'categories': [
@@ -147,8 +200,7 @@ class FakeBackend {
         return _cart();
       case ('POST', '/cart/items'):
         final productId = body['productId'] as String;
-        final addonIds = [...(body['addonIds'] as List).cast<String>()]
-          ..sort();
+        final addonIds = [...(body['addonIds'] as List).cast<String>()]..sort();
         final notes = body['notes'] as String;
         final quantity = body['quantity'] as int;
         final existing = cart
@@ -173,12 +225,59 @@ class FakeBackend {
       case ('DELETE', '/cart'):
         cart.clear();
         return _cart();
+      case ('GET', '/addresses'):
+        return _json({'data': _addressList()});
+      case ('POST', '/addresses'):
+        final cep = (body['cep'] as String).replaceAll(RegExp(r'\D'), '');
+        if (cep.length != 8) {
+          return _error(400, 'VALIDATION_ERROR', 'Dados inválidos.', {
+            'cep': 'CEP inválido.',
+          });
+        }
+        final created = _address(
+          addresses.length + 10,
+          body['label'] as String,
+          body['street'] as String,
+          body['complement'] as String?,
+          body['neighborhood'] as String,
+          body['city'] as String,
+        );
+        addresses.add(created);
+        return _json({...created, 'isSelected': false}, 201);
+      case ('GET', '/payment-methods'):
+        return _json({'data': paymentMethods});
+      case ('POST', '/orders'):
+        if (cart.isEmpty) {
+          return _error(422, 'EMPTY_CART', 'Seu carrinho está vazio.');
+        }
+        final summary =
+            jsonDecode(_cart().body)['summary'] as Map<String, Object?>;
+        final payment = paymentMethods.firstWhere(
+          (p) => p['id'] == body['paymentMethodId'],
+        );
+        orders.add(body);
+        final itemCount = cartCount;
+        cart.clear();
+        coupon = null;
+        return _json({
+          'id': 10482,
+          'code': 'RG-10482',
+          'itemCount': itemCount,
+          'total': summary['total'],
+          'estimatedDelivery': {'minMinutes': 25, 'maxMinutes': 35},
+          'payment': {'type': payment['type'], 'label': payment['label']},
+        }, 201);
       case ('PUT', '/cart/coupon'):
         if ((body['code'] as String).toUpperCase() != 'RANGO10') {
           return _error(422, 'INVALID_COUPON', 'Cupom inválido.');
         }
         coupon = 'RANGO10';
         return _cart();
+    }
+    if (path.startsWith('/addresses/') && path.endsWith('/select')) {
+      final id = int.parse(path.split('/')[2]);
+      selectedAddressId = id;
+      return _json(_addressList().firstWhere((a) => a['id'] == id));
     }
     if (path.startsWith('/cart/items/')) {
       final id = int.parse(path.split('/').last);
@@ -214,9 +313,7 @@ class FakeBackend {
   }
 
   http.Response _cart([int status = 200]) {
-    final items = [
-      for (final line in cart) _item(line),
-    ];
+    final items = [for (final line in cart) _item(line)];
     final subtotal = items.fold<double>(0, (s, i) => s + (i['total'] as num));
     final fee = subtotal == 0 || subtotal >= 60 ? 0.0 : 7.9;
     final discount = coupon == null ? 0.0 : subtotal * 0.1;
@@ -285,8 +382,20 @@ class FakeBackend {
     headers: {'content-type': 'application/json'},
   );
 
-  http.Response _error(int status, String code, String message) => _json({
-    'error': {'code': code, 'message': message},
+  http.Response _error(
+    int status,
+    String code,
+    String message, [
+    Map<String, String> fields = const {},
+  ]) => _json({
+    'error': {
+      'code': code,
+      'message': message,
+      'details': [
+        for (final MapEntry(:key, :value) in fields.entries)
+          {'field': key, 'message': value},
+      ],
+    },
   }, status);
 }
 

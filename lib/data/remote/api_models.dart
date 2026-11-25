@@ -209,3 +209,53 @@ class CartDto {
   final double discount;
   final double total;
 }
+
+// Checkout
+
+class AddressDto {
+  AddressDto.fromJson(Json json)
+    : id = json['id'] as int,
+      label = json['label'] as String,
+      street = json['street'] as String,
+      line = json['line'] as String,
+      cityLine = json['cityLine'] as String,
+      isSelected = json['isSelected'] as bool? ?? false;
+
+  final int id;
+  final String label;
+  final String street;
+  final String line;
+  final String cityLine;
+  final bool isSelected;
+}
+
+class PaymentMethodDto {
+  PaymentMethodDto.fromJson(Json json)
+    : id = json['id'] as int,
+      type = json['type'] as String,
+      label = json['label'] as String,
+      detail = json['detail'] as String;
+
+  final int id;
+  final String type;
+  final String label;
+  final String detail;
+}
+
+// Pedido criado: só os campos da tela de pedido realizado.
+class OrderDto {
+  OrderDto.fromJson(Json json)
+    : code = json['code'] as String,
+      itemCount = json['itemCount'] as int,
+      total = (json['total'] as num).toDouble(),
+      minMinutes = (json['estimatedDelivery'] as Json)['minMinutes'] as int,
+      maxMinutes = (json['estimatedDelivery'] as Json)['maxMinutes'] as int,
+      paymentLabel = (json['payment'] as Json)['label'] as String;
+
+  final String code;
+  final int itemCount;
+  final double total;
+  final int minMinutes;
+  final int maxMinutes;
+  final String paymentLabel;
+}

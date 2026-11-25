@@ -3,6 +3,10 @@ import 'package:material_ui/material_ui.dart';
 import 'data/remote/rango_api.dart';
 import 'rango_store.dart';
 import 'ui/cart/cart_screen.dart';
+import 'ui/checkout/address_screen.dart';
+import 'ui/checkout/checkout_screen.dart';
+import 'ui/checkout/payment_screen.dart';
+import 'ui/order/order_placed_screen.dart';
 import 'ui/components/auth_components.dart';
 import 'ui/home/home_screen.dart';
 import 'ui/login/login_screen.dart';
@@ -11,7 +15,19 @@ import 'ui/signup/signup_screen.dart';
 import 'ui/theme/rango_theme.dart';
 import 'ui/welcome/welcome_screen.dart';
 
-enum Screen { splash, welcome, login, signup, home, product, cart }
+enum Screen {
+  splash,
+  welcome,
+  login,
+  signup,
+  home,
+  product,
+  cart,
+  checkout,
+  address,
+  payment,
+  orderPlaced,
+}
 
 class RangoApp extends StatelessWidget {
   const RangoApp({super.key, this.api});
@@ -130,12 +146,37 @@ class _AppHomeState extends State<_AppHome> {
     _store.loadCart();
   }
 
+  void _openCheckout() {
+    _open(Screen.checkout);
+    _store.loadCheckout();
+  }
+
+  void _openAddress() {
+    _open(Screen.address);
+    _store.loadAddresses();
+  }
+
+  Future<void> _confirmOrder() async {
+    final placed = await _store.placeOrder();
+    // Pedido feito: a pilha recomeça na tela de sucesso, como no protótipo.
+    if (placed && mounted) _reset([Screen.orderPlaced]);
+  }
+
+  // Voltar do sistema na tela de sucesso vai para a Home, não fecha o app.
+  void _handleBack() {
+    if (_stack.last == Screen.orderPlaced) {
+      _enterHome();
+    } else {
+      _back();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: _stack.length == 1,
+      canPop: _stack.length == 1 && _stack.last != Screen.orderPlaced,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _back();
+        if (!didPop) _handleBack();
       },
       child: ListenableBuilder(
         listenable: _store,
@@ -179,7 +220,7 @@ class _AppHomeState extends State<_AppHome> {
             onOpenNotifications: () => _comingSoon('Notificações'),
             onOpenSearch: () => _comingSoon('Busca'),
             onOpenProfile: () => _comingSoon('Perfil'),
-            onOpenAddress: () => _comingSoon('Endereços'),
+            onOpenAddress: _openAddress,
             onSeeAll: (_) => _comingSoon('Busca'),
           ),
           Screen.product => ProductScreen(
@@ -202,9 +243,44 @@ class _AppHomeState extends State<_AppHome> {
             onRemove: _store.removeLine,
             onClear: _store.clearCart,
             onApplyCoupon: _store.applyCoupon,
-            onCheckout: () => _comingSoon('Checkout'),
+            onCheckout: _openCheckout,
             onContinueShopping: () => _reset([Screen.home]),
           ),
+          Screen.checkout => CheckoutScreen(
+            cart: _store.cart,
+            address: _store.selectedAddress,
+            payment: _store.selectedPayment,
+            loading: _store.checkoutLoading,
+            placing: _store.placingOrder,
+            onBack: _back,
+            onChangeAddress: () => _open(Screen.address),
+            onChangePayment: () => _open(Screen.payment),
+            onConfirm: _confirmOrder,
+          ),
+          Screen.address => AddressScreen(
+            addresses: _store.addresses,
+            selectedId: _store.selectedAddressId,
+            loading: _store.checkoutLoading,
+            onBack: _back,
+            onChoose: _store.chooseAddress,
+            onSave: _store.createAddress,
+            onConfirm: _store.confirmAddress,
+          ),
+          Screen.payment => PaymentScreen(
+            methods: _store.paymentMethods,
+            selectedId: _store.selectedPaymentId,
+            loading: _store.checkoutLoading,
+            onBack: _back,
+            onChoose: _store.choosePayment,
+          ),
+          Screen.orderPlaced => switch (_store.lastOrder) {
+            final order? => OrderPlacedScreen(
+              order: order,
+              onTrack: () => _comingSoon('Acompanhar pedido'),
+              onHome: _enterHome,
+            ),
+            null => const _Splash(),
+          },
         },
       ),
     );

@@ -154,6 +154,59 @@ class RangoApi {
     await _call('PUT', '/cart/coupon', body: {'code': code}),
   );
 
+  // Checkout
+
+  // Selecionado primeiro.
+  Future<List<AddressDto>> addresses() async => [
+    for (final item
+        in ((await _call('GET', '/addresses')) as Json)['data'] as List)
+      AddressDto.fromJson(item as Json),
+  ];
+
+  Future<AddressDto> createAddress({
+    required String label,
+    required String cep,
+    required String street,
+    required String complement,
+    required String neighborhood,
+    required String city,
+  }) async => AddressDto.fromJson(
+    await _call(
+      'POST',
+      '/addresses',
+      body: {
+        'label': label,
+        'cep': cep,
+        'street': street,
+        'complement': complement,
+        'neighborhood': neighborhood,
+        'city': city,
+      },
+    ),
+  );
+
+  // "Usar este endereço": vira o endereço de entrega no servidor.
+  Future<AddressDto> selectAddress(int id) async =>
+      AddressDto.fromJson(await _call('POST', '/addresses/$id/select'));
+
+  Future<List<PaymentMethodDto>> paymentMethods() async => [
+    for (final item
+        in ((await _call('GET', '/payment-methods')) as Json)['data'] as List)
+      PaymentMethodDto.fromJson(item as Json),
+  ];
+
+  // Transforma o carrinho do servidor em pedido; o servidor esvazia o carrinho.
+  Future<OrderDto> placeOrder({
+    required int addressId,
+    required int paymentMethodId,
+  }) async => OrderDto.fromJson(
+    await _call(
+      'POST',
+      '/orders',
+      body: {'addressId': addressId, 'paymentMethodId': paymentMethodId},
+    ),
+  );
+
   // Infra
 
   // Envia a requisição; se o access token venceu, renova a sessão e tenta de novo uma vez.
