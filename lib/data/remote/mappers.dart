@@ -1,4 +1,6 @@
 import '../cart.dart';
+import '../checkout.dart';
+import '../order.dart';
 import '../product.dart';
 import 'api_models.dart';
 
@@ -55,5 +57,36 @@ extension CartDtoMapper on CartDto {
     couponCode: couponCode,
     couponApplied: couponApplied,
     couponPercentOff: couponPercentOff,
+  );
+}
+
+extension AddressDtoMapper on AddressDto {
+  Address toAddress() => Address(
+    id: id,
+    label: label,
+    street: street,
+    line: line,
+    cityLine: cityLine,
+    selected: isSelected,
+  );
+}
+
+extension PaymentMethodDtoMapper on PaymentMethodDto {
+  PaymentMethod toPaymentMethod() => PaymentMethod(
+    id: id,
+    type: PaymentType.fromApi(type),
+    label: label,
+    detail: detail,
+  );
+}
+
+extension OrderDtoMapper on OrderDto {
+  PlacedOrder toPlacedOrder() => PlacedOrder(
+    code: code,
+    minMinutes: minMinutes,
+    maxMinutes: maxMinutes,
+    paymentLabel: paymentLabel,
+    itemCount: itemCount,
+    total: total,
   );
 }
