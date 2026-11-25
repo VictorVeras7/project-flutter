@@ -2,14 +2,16 @@ import 'package:material_ui/material_ui.dart';
 
 import 'data/remote/rango_api.dart';
 import 'rango_store.dart';
+import 'ui/cart/cart_screen.dart';
 import 'ui/components/auth_components.dart';
 import 'ui/home/home_screen.dart';
 import 'ui/login/login_screen.dart';
+import 'ui/product/product_screen.dart';
 import 'ui/signup/signup_screen.dart';
 import 'ui/theme/rango_theme.dart';
 import 'ui/welcome/welcome_screen.dart';
 
-enum Screen { splash, welcome, login, signup, home }
+enum Screen { splash, welcome, login, signup, home, product, cart }
 
 class RangoApp extends StatelessWidget {
   const RangoApp({super.key, this.api});
@@ -42,6 +44,8 @@ class _AppHomeState extends State<_AppHome> {
   late final _store = RangoStore(widget.api ?? RangoApi());
   // Pilha do protótipo: voltar retorna para a tela anterior.
   final _stack = [Screen.splash];
+  // Cada abertura do detalhe recomeça quantidade, adicionais e observações.
+  var _productVisit = 0;
 
   @override
   void initState() {
@@ -94,7 +98,10 @@ class _AppHomeState extends State<_AppHome> {
 
   void _open(Screen screen) => setState(() => _stack.add(screen));
 
-  void _back() => setState(_stack.removeLast);
+  void _back() {
+    if (_stack.last == Screen.product) _store.closeProduct();
+    setState(_stack.removeLast);
+  }
 
   void _reset(List<Screen> stack) {
     if (!mounted) return;
@@ -108,6 +115,19 @@ class _AppHomeState extends State<_AppHome> {
   void _enterHome() {
     _reset([Screen.home]);
     _store.loadHome();
+  }
+
+  Future<void> _openProduct(String id) async {
+    _productVisit++;
+    _open(Screen.product);
+    final opened = await _store.openProduct(id);
+    // Não deu para carregar: o aviso já apareceu, volta para onde estava.
+    if (!opened && mounted && _stack.last == Screen.product) _back();
+  }
+
+  void _openCart() {
+    _open(Screen.cart);
+    _store.loadCart();
   }
 
   @override
@@ -154,13 +174,36 @@ class _AppHomeState extends State<_AppHome> {
             onCategoryChange: _store.loadCategory,
             onToggleFavorite: _store.toggleFavorite,
             onAddToCart: _store.addToCart,
-            onOpenProduct: (_) => _comingSoon('Detalhe do produto'),
-            onOpenCart: () => _comingSoon('Carrinho'),
+            onOpenProduct: _openProduct,
+            onOpenCart: _openCart,
             onOpenNotifications: () => _comingSoon('Notificações'),
             onOpenSearch: () => _comingSoon('Busca'),
             onOpenProfile: () => _comingSoon('Perfil'),
             onOpenAddress: () => _comingSoon('Endereços'),
             onSeeAll: (_) => _comingSoon('Busca'),
+          ),
+          Screen.product => ProductScreen(
+            key: ValueKey(_productVisit),
+            preview: _store.productPreview,
+            detail: _store.productDetail,
+            favorite: _store.favoriteIds.contains(
+              _store.productDetail?.product.id ?? _store.productPreview?.id,
+            ),
+            onBack: _back,
+            onToggleFavorite: _store.toggleFavorite,
+            onAdd: _store.addToCart,
+          ),
+          Screen.cart => CartScreen(
+            cart: _store.cart,
+            loading: _store.cartLoading,
+            onBack: _back,
+            onOpenProduct: _openProduct,
+            onChangeQuantity: _store.changeQuantity,
+            onRemove: _store.removeLine,
+            onClear: _store.clearCart,
+            onApplyCoupon: _store.applyCoupon,
+            onCheckout: () => _comingSoon('Checkout'),
+            onContinueShopping: () => _reset([Screen.home]),
           ),
         },
       ),
