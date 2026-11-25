@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'data/cart.dart';
@@ -46,7 +48,22 @@ class RangoStore extends ChangeNotifier {
   var checkoutLoading = false;
   var placingOrder = false;
   PlacedOrder? lastOrder;
+  // Badges da barra inferior.
+  var liveOrderCount = 0;
+  var favoriteCount = 0;
+  // "Meus pedidos", por aba. Ausente = ainda não carregou.
+  final orders = <OrderGroup, List<OrderSummary>>{};
+  // Aba aberta em "Meus pedidos"; fica ao voltar do detalhe, como no protótipo.
+  var ordersGroup = OrderGroup.live;
+  // Pedido acompanhado (atualizado a cada 5 s) e pedido aberto no detalhe.
+  OrderDetail? trackedOrder;
+  OrderDetail? openedOrder;
   StoreMessage? message;
+
+  static const trackingInterval = Duration(seconds: 5);
+  Timer? _trackingTimer;
+  String? _trackingCode;
+  String? _openedCode;
 
   String? _openProductId;
 
@@ -111,6 +128,18 @@ class RangoStore extends ChangeNotifier {
     checkoutLoading = false;
     placingOrder = false;
     lastOrder = null;
+    liveOrderCount = 0;
+    favoriteCount = 0;
+    orders.clear();
+    ordersGroup = OrderGroup.live;
+    stopTracking();
+    closeOrder();
+  }
+
+  @override
+  void dispose() {
+    _trackingTimer?.cancel();
+    super.dispose();
   }
 
   // Home
@@ -152,12 +181,14 @@ class RangoStore extends ChangeNotifier {
     final favorite = !favoriteIds.contains(id);
     // Atualiza na hora e desfaz se o servidor recusar.
     _setFavorite(id, favorite);
+    favoriteCount += favorite ? 1 : -1;
     _show(
       favorite ? 'Adicionado aos favoritos.' : 'Removido dos favoritos.',
       favorite ? MessageKind.success : MessageKind.info,
     );
     _api.setFavorite(id, favorite).catchError((Object e) {
       _setFavorite(id, !favorite);
+      favoriteCount += favorite ? -1 : 1;
       _show(_errorText(e), MessageKind.error);
     });
   }
@@ -410,14 +441,145 @@ class RangoStore extends ChangeNotifier {
         paymentMethodId: paymentId,
       );
       lastOrder = order.toPlacedOrder();
-      // O servidor esvaziou o carrinho.
+      // O servidor esvaziou o carrinho; o pedido novo entra em andamento.
       cart = Cart.empty;
       cartCount = 0;
+      liveOrderCount++;
+      orders.remove(OrderGroup.live);
       placed = true;
     });
     placingOrder = false;
     notifyListeners();
     return placed;
+  }
+
+  // Barra inferior
+
+  // Pedidos em andamento e favoritos. Falha aqui não merece aviso:
+  // os badges só somem até a próxima carga.
+  Future<void> loadNavBadges() async {
+    try {
+      final (live, favorites) = await (
+        _api.orders(OrderGroup.live.apiKey, pageSize: 1),
+        _api.favorites(),
+      ).wait;
+      liveOrderCount = live.total;
+      favoriteCount = favorites.count;
+      notifyListeners();
+    } on Object {
+      // Sessão encerrada já é tratada pela API; o resto é ignorado.
+    }
+  }
+
+  // Meus pedidos
+
+  void selectOrdersGroup(OrderGroup group) {
+    if (group == ordersGroup) return;
+    ordersGroup = group;
+    notifyListeners();
+    loadOrders(group);
+  }
+
+  Future<void> loadOrders(OrderGroup group) => _safely(() async {
+    final list = await _api.orders(group.apiKey);
+    orders[group] = [for (final o in list.data) o.toSummary()];
+    if (group == OrderGroup.live) {
+      liveOrderCount = list.total;
+    } else {
+      // Um pedido pode ter sido entregue desde a última conta do badge.
+      unawaited(loadNavBadges());
+    }
+  });
+
+  // Acompanhamento: busca agora e a cada 5 s, até o pedido terminar.
+  Future<void> startTracking(String code) async {
+    stopTracking();
+    _trackingCode = code;
+    if (trackedOrder?.code != code) trackedOrder = null;
+    notifyListeners();
+    final ok = await _refreshTracked(showErrors: true);
+    if (!ok || _trackingCode != code) return;
+    _trackingTimer = Timer.periodic(
+      trackingInterval,
+      (_) => _refreshTracked(showErrors: false),
+    );
+  }
+
+  void stopTracking() {
+    _trackingTimer?.cancel();
+    _trackingTimer = null;
+    _trackingCode = null;
+  }
+
+  Future<bool> _refreshTracked({required bool showErrors}) async {
+    final code = _trackingCode;
+    if (code == null) return false;
+    try {
+      final detail = (await _api.order(code)).toDetail();
+      if (_trackingCode != code) return false;
+      final wasLive = trackedOrder?.isLive ?? true;
+      trackedOrder = detail;
+      if (!detail.isLive) {
+        _trackingTimer?.cancel();
+        // Terminou durante o acompanhamento: as listas mudaram.
+        if (wasLive) {
+          orders.clear();
+          unawaited(loadNavBadges());
+        }
+      }
+      notifyListeners();
+      return detail.isLive;
+    } on Object catch (e) {
+      // Na repetição, falha de rede some na próxima tentativa.
+      if (showErrors) _show(_errorText(e), MessageKind.error);
+      return false;
+    }
+  }
+
+  // Detalhes do pedido.
+  Future<bool> openOrder(String code) async {
+    _openedCode = code;
+    if (openedOrder?.code != code) openedOrder = null;
+    notifyListeners();
+    try {
+      final detail = (await _api.order(code)).toDetail();
+      if (_openedCode == code) openedOrder = detail;
+      notifyListeners();
+      return true;
+    } on Object catch (e) {
+      if (_openedCode != code) return true;
+      _show(_errorText(e), MessageKind.error);
+      return false;
+    }
+  }
+
+  void closeOrder() {
+    _openedCode = null;
+    openedOrder = null;
+  }
+
+  // "Pedir novamente". Devolve true se algo entrou no carrinho.
+  Future<bool> reorder(String code) async {
+    var added = false;
+    await _safely(() async {
+      final result = await _api.reorder(code);
+      _setCart(result.cart);
+      added = !cart.isEmpty;
+      if (!added) {
+        _show(
+          'Os itens deste pedido não estão mais disponíveis.',
+          MessageKind.error,
+        );
+      } else if (result.skippedProductIds.isNotEmpty) {
+        _show(
+          'Itens adicionados ao carrinho. Alguns não estão mais disponíveis.',
+          MessageKind.info,
+        );
+      } else {
+        _show('Itens adicionados ao carrinho.', MessageKind.success);
+      }
+    });
+    return added;
   }
 
   void _setCart(CartDto dto) {
