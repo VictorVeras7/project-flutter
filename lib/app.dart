@@ -6,7 +6,11 @@ import 'ui/cart/cart_screen.dart';
 import 'ui/checkout/address_screen.dart';
 import 'ui/checkout/checkout_screen.dart';
 import 'ui/checkout/payment_screen.dart';
+import 'ui/components/bottom_nav_bar.dart';
+import 'ui/order/order_detail_screen.dart';
 import 'ui/order/order_placed_screen.dart';
+import 'ui/order/orders_screen.dart';
+import 'ui/order/tracking_screen.dart';
 import 'ui/components/auth_components.dart';
 import 'ui/home/home_screen.dart';
 import 'ui/login/login_screen.dart';
@@ -27,7 +31,13 @@ enum Screen {
   address,
   payment,
   orderPlaced,
+  tracking,
+  orders,
+  orderDetail,
 }
+
+// Telas com a barra inferior, e a aba de cada uma.
+const _tabScreens = {Screen.home: NavTab.home, Screen.orders: NavTab.orders};
 
 class RangoApp extends StatelessWidget {
   const RangoApp({super.key, this.api});
@@ -115,7 +125,16 @@ class _AppHomeState extends State<_AppHome> {
   void _open(Screen screen) => setState(() => _stack.add(screen));
 
   void _back() {
-    if (_stack.last == Screen.product) _store.closeProduct();
+    switch (_stack.last) {
+      case Screen.product:
+        _store.closeProduct();
+      // Saiu do acompanhamento: para de buscar o pedido a cada 5 s.
+      case Screen.tracking:
+        _store.stopTracking();
+      case Screen.orderDetail:
+        _store.closeOrder();
+      default:
+    }
     setState(_stack.removeLast);
   }
 
@@ -130,7 +149,66 @@ class _AppHomeState extends State<_AppHome> {
 
   void _enterHome() {
     _reset([Screen.home]);
-    _store.loadHome();
+    _store
+      ..loadHome()
+      ..loadNavBadges();
+  }
+
+  // Barra inferior. Pedidos fica sobre a Home: voltar retorna ao Início.
+  void _selectTab(NavTab tab) {
+    final current = _tabScreens[_stack.last];
+    if (tab == current) return;
+    switch (tab) {
+      case NavTab.home:
+        _reset([Screen.home]);
+      case NavTab.orders:
+        _reset([Screen.home, Screen.orders]);
+      case NavTab.search || NavTab.favorites || NavTab.profile:
+        _comingSoon(tab.label);
+    }
+  }
+
+  void _openTracking(String code) {
+    _open(Screen.tracking);
+    _store.startTracking(code);
+  }
+
+  Future<void> _openOrder(String code) async {
+    _open(Screen.orderDetail);
+    final opened = await _store.openOrder(code);
+    if (!opened && mounted && _stack.last == Screen.orderDetail) _back();
+  }
+
+  // "Pedir novamente": com itens no carrinho, abre o carrinho.
+  Future<void> _reorder(String code) async {
+    final added = await _store.reorder(code);
+    if (added && mounted) _open(Screen.cart);
+  }
+
+  // Início e Pedidos ganham a barra inferior; a tela não reserva o espaço
+  // de baixo do sistema, que fica com a barra.
+  Widget _withNav(Widget screen) {
+    final tab = _tabScreens[_stack.last];
+    if (tab == null) return screen;
+    return Column(
+      children: [
+        Expanded(
+          child: MediaQuery.removePadding(
+            context: context,
+            removeBottom: true,
+            child: screen,
+          ),
+        ),
+        BottomNavBar(
+          current: tab,
+          onSelect: _selectTab,
+          badges: {
+            NavTab.orders: _store.liveOrderCount,
+            NavTab.favorites: _store.favoriteCount,
+          },
+        ),
+      ],
+    );
   }
 
   Future<void> _openProduct(String id) async {
@@ -180,7 +258,7 @@ class _AppHomeState extends State<_AppHome> {
       },
       child: ListenableBuilder(
         listenable: _store,
-        builder: (context, _) => switch (_stack.last) {
+        builder: (context, _) => _withNav(switch (_stack.last) {
           Screen.splash => const _Splash(),
           Screen.welcome => WelcomeScreen(
             onLogin: () => _open(Screen.login),
@@ -276,12 +354,36 @@ class _AppHomeState extends State<_AppHome> {
           Screen.orderPlaced => switch (_store.lastOrder) {
             final order? => OrderPlacedScreen(
               order: order,
-              onTrack: () => _comingSoon('Acompanhar pedido'),
+              onTrack: () => _openTracking(order.code),
               onHome: _enterHome,
             ),
             null => const _Splash(),
           },
-        },
+          Screen.tracking => TrackingScreen(
+            order: _store.trackedOrder,
+            onBack: _back,
+            onChat: () => _comingSoon('Conversar com o entregador'),
+            onCall: () => _comingSoon('Ligar para o entregador'),
+          ),
+          Screen.orders => OrdersScreen(
+            orders: _store.orders,
+            group: _store.ordersGroup,
+            onSelectGroup: _store.selectOrdersGroup,
+            onLoad: _store.loadOrders,
+            onOpen: _openOrder,
+            onTrack: _openTracking,
+            onReorder: _reorder,
+            onOrderNow: () => _selectTab(NavTab.home),
+          ),
+          Screen.orderDetail => OrderDetailScreen(
+            order: _store.openedOrder,
+            onBack: _back,
+            onReorder: () {
+              final code = _store.openedOrder?.code;
+              if (code != null) _reorder(code);
+            },
+          ),
+        }),
       ),
     );
   }
