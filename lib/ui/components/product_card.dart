@@ -447,7 +447,7 @@ class ProductTile extends StatelessWidget {
   }
 }
 
-// Linha da lista de uma categoria.
+// Linha da lista de uma categoria e dos resultados da busca.
 class ProductRow extends StatelessWidget {
   const ProductRow({
     super.key,
@@ -456,6 +456,7 @@ class ProductRow extends StatelessWidget {
     required this.onOpen,
     required this.onToggleFavorite,
     required this.onAdd,
+    this.subtitle,
   });
 
   final Product product;
@@ -463,6 +464,8 @@ class ProductRow extends StatelessWidget {
   final VoidCallback onOpen;
   final VoidCallback onToggleFavorite;
   final VoidCallback onAdd;
+  // Texto embaixo do nome; sem ele, a descrição do produto.
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -514,7 +517,7 @@ class ProductRow extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  product.description,
+                  subtitle ?? product.description,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
