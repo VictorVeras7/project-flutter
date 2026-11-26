@@ -80,13 +80,65 @@ extension PaymentMethodDtoMapper on PaymentMethodDto {
   );
 }
 
-extension OrderDtoMapper on OrderDto {
-  PlacedOrder toPlacedOrder() => PlacedOrder(
+extension OrderSummaryDtoMapper on OrderSummaryDto {
+  OrderSummary toSummary() => OrderSummary(
     code: code,
+    status: OrderStatus.fromApi(status),
+    statusLabel: statusLabel,
+    createdAt: createdAt,
+    total: total,
+    itemCount: itemCount,
+    itemsSummary: itemsSummary,
+    hue: imageHue,
+  );
+}
+
+extension OrderDetailDtoMapper on OrderDetailDto {
+  PlacedOrder toPlacedOrder() => PlacedOrder(
+    code: summary.code,
     minMinutes: minMinutes,
     maxMinutes: maxMinutes,
     paymentLabel: paymentLabel,
-    itemCount: itemCount,
-    total: total,
+    itemCount: summary.itemCount,
+    total: summary.total,
+  );
+
+  OrderDetail toDetail() => OrderDetail(
+    summary: summary.toSummary(),
+    step: summary.step,
+    hint: hint,
+    timeline: [
+      for (final t in timeline)
+        TimelineStep(
+          step: t.step,
+          label: t.label,
+          state: switch (t.state) {
+            'done' => TimelineState.done,
+            'current' => TimelineState.current,
+            _ => TimelineState.upcoming,
+          },
+          reachedAt: t.reachedAt,
+        ),
+    ],
+    minMinutes: minMinutes,
+    maxMinutes: maxMinutes,
+    items: [
+      for (final i in items)
+        OrderItem(
+          name: i.name,
+          restaurant: i.restaurant,
+          hue: i.imageHue,
+          quantity: i.quantity,
+          total: i.total,
+        ),
+    ],
+    addressLine: addressLine,
+    paymentType: paymentType,
+    paymentLabel: paymentLabel,
+    subtotal: subtotal,
+    deliveryFee: deliveryFee,
+    discount: discount,
+    courierName: courierName,
+    courierVehicle: courierVehicle,
   );
 }

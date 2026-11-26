@@ -44,6 +44,41 @@ class FakeLine {
   String notes;
 }
 
+// Pedido guardado no back-end falso.
+class FakeOrder {
+  FakeOrder(
+    this.id,
+    this.items, {
+    this.status = 'live',
+    this.step = 1,
+    this.paymentType = 'pix',
+    this.paymentLabel = 'PIX',
+    this.addressLine = 'Rua das Palmeiras, 128 · apto 42',
+    required this.createdAt,
+  });
+
+  final int id;
+  // (productId, quantidade).
+  final List<(String, int)> items;
+  String status;
+  int step;
+  final String paymentType;
+  final String paymentLabel;
+  final String addressLine;
+  final DateTime createdAt;
+
+  String get code => 'RG-$id';
+
+  // Uma etapa por leitura; na última, o pedido é entregue.
+  void advance() {
+    step++;
+    if (step >= 4) {
+      step = 4;
+      status = 'done';
+    }
+  }
+}
+
 // Back-end em memória com o mesmo contrato da API local (porta 3333).
 // Carrinho com as regras do servidor: entrega de R$ 7,90, grátis a partir
 // de R$ 60, e o cupom RANGO10 com 10% sobre o subtotal.
@@ -68,6 +103,38 @@ class FakeBackend {
   var selectedAddressId = 1;
   // Pedidos criados: addressId e paymentMethodId enviados.
   final orders = <Map<String, Object?>>[];
+  // Histórico do servidor: um entregue e um cancelado, como no seed.
+  final placed = <FakeOrder>[
+    FakeOrder(
+      10391,
+      [('p2', 1)],
+      status: 'done',
+      step: 4,
+      createdAt: DateTime.utc(2026, 9, 12, 19, 14),
+    ),
+    FakeOrder(
+      10298,
+      [('p5', 1)],
+      status: 'cancel',
+      step: 1,
+      createdAt: DateTime.utc(2026, 8, 28, 19, 14),
+    ),
+  ];
+  // Cada leitura de um pedido em andamento avança uma etapa, no lugar dos
+  // 20 s do servidor.
+  var advanceOnRead = true;
+
+  // Pedido em andamento já existente (para a aba e o acompanhamento).
+  FakeOrder seedLiveOrder({int step = 2}) {
+    final order = FakeOrder(
+      10500 + placed.length,
+      [('p1', 2)],
+      step: step,
+      createdAt: DateTime.now().toUtc(),
+    );
+    placed.insert(0, order);
+    return order;
+  }
 
   static const paymentMethods = [
     {'id': 1, 'type': 'pix', 'label': 'PIX', 'detail': 'Aprovação imediata'},
@@ -250,29 +317,72 @@ class FakeBackend {
         if (cart.isEmpty) {
           return _error(422, 'EMPTY_CART', 'Seu carrinho está vazio.');
         }
-        final summary =
-            jsonDecode(_cart().body)['summary'] as Map<String, Object?>;
         final payment = paymentMethods.firstWhere(
           (p) => p['id'] == body['paymentMethodId'],
         );
+        final address = addresses.firstWhere(
+          (a) => a['id'] == body['addressId'],
+        );
         orders.add(body);
-        final itemCount = cartCount;
+        final order = FakeOrder(
+          10482,
+          [for (final line in cart) (line.productId, line.quantity)],
+          paymentType: payment['type'] as String,
+          paymentLabel: payment['label'] as String,
+          addressLine: address['line'] as String,
+          createdAt: DateTime.now().toUtc(),
+        );
+        placed.insert(0, order);
         cart.clear();
         coupon = null;
+        return _json(_orderJson(order), 201);
+      case ('GET', '/orders'):
+        final live = request.url.queryParameters['group'] == 'live';
+        final list = [
+          for (final o in placed)
+            if ((o.status == 'live') == live) o,
+        ];
         return _json({
-          'id': 10482,
-          'code': 'RG-10482',
-          'itemCount': itemCount,
-          'total': summary['total'],
-          'estimatedDelivery': {'minMinutes': 25, 'maxMinutes': 35},
-          'payment': {'type': payment['type'], 'label': payment['label']},
-        }, 201);
+          'data': [for (final o in list) _orderJson(o)],
+          'meta': {'total': list.length},
+        });
+      case ('GET', '/favorites'):
+        return _json({
+          'data': [
+            for (final p in _withFavorites())
+              if (favorites.contains(p['id'])) p,
+          ],
+        });
       case ('PUT', '/cart/coupon'):
         if ((body['code'] as String).toUpperCase() != 'RANGO10') {
           return _error(422, 'INVALID_COUPON', 'Cupom inválido.');
         }
         coupon = 'RANGO10';
         return _cart();
+    }
+    if (path.startsWith('/orders/')) {
+      final code = path.split('/')[2];
+      final order = placed.where((o) => o.code == code).firstOrNull;
+      if (order == null) {
+        return _error(404, 'ORDER_NOT_FOUND', 'Pedido não encontrado.');
+      }
+      if (path.endsWith('/reorder')) {
+        cart.clear();
+        final skipped = <String>[];
+        for (final (productId, quantity) in order.items) {
+          if (products.any((p) => p['id'] == productId)) {
+            seedCart(productId, quantity: quantity);
+          } else {
+            skipped.add(productId);
+          }
+        }
+        return _json({
+          'cart': jsonDecode(utf8.decode(_cart().bodyBytes)),
+          'skippedProductIds': skipped,
+        });
+      }
+      if (advanceOnRead && order.status == 'live') order.advance();
+      return _json(_orderJson(order));
     }
     if (path.startsWith('/addresses/') && path.endsWith('/select')) {
       final id = int.parse(path.split('/')[2]);
@@ -310,6 +420,89 @@ class FakeBackend {
       return http.Response('', 204);
     }
     return _error(404, 'NOT_FOUND', 'Rota não encontrada.');
+  }
+
+  static const _steps = [
+    'Pedido recebido',
+    'Pedido confirmado',
+    'Em preparação',
+    'Saiu para entrega',
+    'Entregue',
+  ];
+  static const _hints = [
+    'Aguardando o restaurante',
+    'O restaurante aceitou seu pedido',
+    'Seu pedido está sendo preparado',
+    'O entregador está levando seu pedido',
+    'Bom apetite!',
+  ];
+
+  // Mesmo formato de GET /orders/:id do servidor.
+  Map<String, Object?> _orderJson(FakeOrder o) {
+    final items = [
+      for (final (productId, quantity) in o.items)
+        (products.firstWhere((p) => p['id'] == productId), quantity),
+    ];
+    final subtotal = items.fold<num>(
+      0,
+      (s, i) => s + (i.$1['price'] as num) * i.$2,
+    );
+    final fee = subtotal >= 60 ? 0 : 7.9;
+    return {
+      'id': o.id,
+      'code': o.code,
+      'status': o.status,
+      'statusLabel': o.status == 'cancel'
+          ? 'Cancelado'
+          : o.status == 'done'
+          ? 'Entregue'
+          : _steps[o.step],
+      'step': o.step,
+      'createdAt': o.createdAt.toIso8601String(),
+      'total': subtotal + fee,
+      'itemCount': items.fold<int>(0, (s, i) => s + i.$2),
+      'itemsSummary': [for (final i in items) '${i.$2}× ${i.$1['name']}']
+          .join(', '),
+      'thumbnail': {'imageHue': items.first.$1['imageHue']},
+      'hint': o.status == 'cancel'
+          ? 'Este pedido foi cancelado'
+          : _hints[o.step],
+      'timeline': [
+        for (var step = 0; step < _steps.length; step++)
+          {
+            'step': step,
+            'label': _steps[step],
+            'state': step < o.step || (step == o.step && o.status != 'live')
+                ? 'done'
+                : step == o.step
+                ? 'current'
+                : 'upcoming',
+            'reachedAt': step <= o.step
+                ? o.createdAt.add(Duration(minutes: step * 5)).toIso8601String()
+                : null,
+          },
+      ],
+      'estimatedDelivery': {'minMinutes': 25, 'maxMinutes': 35},
+      'items': [
+        for (final (p, quantity) in items)
+          {
+            'name': p['name'],
+            'restaurant': p['restaurant'],
+            'imageHue': p['imageHue'],
+            'quantity': quantity,
+            'total': (p['price'] as num) * quantity,
+          },
+      ],
+      'address': {'line': o.addressLine},
+      'payment': {'type': o.paymentType, 'label': o.paymentLabel},
+      'amounts': {
+        'subtotal': subtotal,
+        'deliveryFee': fee,
+        'discount': 0,
+        'total': subtotal + fee,
+      },
+      'courier': {'name': 'Rafael Souza', 'vehicle': 'Honda CG 160'},
+    };
   }
 
   http.Response _cart([int status = 200]) {
