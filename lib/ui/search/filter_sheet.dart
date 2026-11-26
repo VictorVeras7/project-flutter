@@ -198,3 +198,252 @@ class _FilterSheetState extends State<_FilterSheet> {
     );
   }
 }
+
+class _CloseButton extends StatelessWidget {
+  const _CloseButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+      side: BorderSide(color: colors.outline),
+    );
+
+    return Semantics(
+      button: true,
+      label: 'Fechar filtros',
+      excludeSemantics: true,
+      child: Material(
+        color: colors.surface,
+        shape: shape,
+        child: InkWell(
+          customBorder: shape,
+          onTap: onTap,
+          child: SizedBox.square(
+            dimension: 34,
+            child: Icon(Icons.close_rounded, size: 19, color: colors.onSurface),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Group extends StatelessWidget {
+  const _Group({
+    required this.title,
+    required this.child,
+    this.trailing,
+    this.spacing = 9,
+  });
+
+  final String title;
+  final Widget child;
+  final Widget? trailing;
+  final double spacing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: spacing,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            ?trailing,
+          ],
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+// Chips de escolha única de um grupo.
+class _Chips<T> extends StatelessWidget {
+  const _Chips({
+    required this.options,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final List<(T, String)> options;
+  final T selected;
+  final ValueChanged<T> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final soft = RangoPalette.of(context).soft;
+
+    return Wrap(
+      spacing: 7,
+      runSpacing: 7,
+      children: [
+        for (final (value, label) in options)
+          Builder(
+            builder: (context) {
+              final on = value == selected;
+              final shape = RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: on ? colors.primary : colors.outline),
+              );
+              return Semantics(
+                selected: on,
+                inMutuallyExclusiveGroup: true,
+                child: Material(
+                  color: on ? soft : colors.surfaceContainerHighest,
+                  shape: shape,
+                  child: InkWell(
+                    customBorder: shape,
+                    onTap: () => onSelect(value),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          color: on ? colors.primary : colors.onSurfaceVariant,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+}
+
+// Slider de R$ 10 a R$ 80, de 5 em 5, com trilho fino e alça redonda
+// (o input range do protótipo, não o visual padrão do Material 3).
+class _PriceSlider extends StatelessWidget {
+  const _PriceSlider({required this.value, required this.onChanged});
+
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final labelStyle = TextStyle(
+      color: colors.onSurfaceVariant,
+      fontSize: 11,
+      fontWeight: FontWeight.w600,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SliderTheme(
+          data: SliderThemeData(
+            trackHeight: 4,
+            activeTrackColor: colors.primary,
+            inactiveTrackColor: colors.outline,
+            thumbColor: colors.primary,
+            overlayColor: colors.primary.withValues(alpha: 0.12),
+            trackShape: const RoundedRectSliderTrackShape(),
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+            tickMarkShape: SliderTickMarkShape.noTickMark,
+            showValueIndicator: ShowValueIndicator.never,
+            // A alça fica dentro da largura, como no input range do protótipo.
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+          ),
+          child: SizedBox(
+            height: 32,
+            child: Slider(
+              value: value,
+              min: minPriceFilter,
+              max: maxPriceFilter,
+              divisions: (maxPriceFilter - minPriceFilter) ~/ priceFilterStep,
+              semanticFormatterCallback: (v) => 'até ${formatMoney(v)}',
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              formatMoney(minPriceFilter).replaceAll(',00', ''),
+              style: labelStyle,
+            ),
+            Text(
+              formatMoney(maxPriceFilter).replaceAll(',00', ''),
+              style: labelStyle,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _SortRow extends StatelessWidget {
+  const _SortRow({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(14);
+
+    return Semantics(
+      selected: selected,
+      inMutuallyExclusiveGroup: true,
+      child: Material(
+        color: selected ? RangoPalette.of(context).soft : Colors.transparent,
+        borderRadius: radius,
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            child: Row(
+              spacing: 11,
+              children: [
+                RadioMark(selected: selected),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
