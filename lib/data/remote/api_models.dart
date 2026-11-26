@@ -132,9 +132,14 @@ class ProductDto {
 
 class ProductListDto {
   ProductListDto.fromJson(Json json)
-    : data = _list(json['data'], ProductDto.fromJson);
+    : data = _list(json['data'], ProductDto.fromJson),
+      total =
+          ((json['meta'] as Json?)?['total'] as int?) ??
+          (json['data'] as List? ?? const []).length;
 
   final List<ProductDto> data;
+  // Total de produtos que atendem a busca (a página pode trazer menos).
+  final int total;
 }
 
 class AddonDto {
@@ -356,10 +361,18 @@ class ReorderDto {
   final List<String> skippedProductIds;
 }
 
+// Favoritos, mais recentes primeiro.
 class FavoriteListDto {
   FavoriteListDto.fromJson(Json json)
-    : count = (json['data'] as List? ?? const []).length;
+    : data = _list(json['data'], ProductDto.fromJson);
 
-  // A barra inferior só usa a quantidade.
-  final int count;
+  final List<ProductDto> data;
+
+  int get count => data.length;
 }
+
+// Buscas recentes e sugestões: só os textos.
+List<String> stringList(Object? json) => [
+  for (final item in ((json as Json)['data'] as List? ?? const []))
+    item as String,
+];
