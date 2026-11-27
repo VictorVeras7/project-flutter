@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'data/product.dart';
 import 'data/remote/rango_api.dart';
+import 'data/search.dart';
 import 'rango_store.dart';
 import 'ui/cart/cart_screen.dart';
 import 'ui/checkout/address_screen.dart';
@@ -12,9 +14,11 @@ import 'ui/order/order_placed_screen.dart';
 import 'ui/order/orders_screen.dart';
 import 'ui/order/tracking_screen.dart';
 import 'ui/components/auth_components.dart';
+import 'ui/favorites/favorites_screen.dart';
 import 'ui/home/home_screen.dart';
 import 'ui/login/login_screen.dart';
 import 'ui/product/product_screen.dart';
+import 'ui/search/search_screen.dart';
 import 'ui/signup/signup_screen.dart';
 import 'ui/theme/rango_theme.dart';
 import 'ui/welcome/welcome_screen.dart';
@@ -34,10 +38,17 @@ enum Screen {
   tracking,
   orders,
   orderDetail,
+  search,
+  favorites,
 }
 
 // Telas com a barra inferior, e a aba de cada uma.
-const _tabScreens = {Screen.home: NavTab.home, Screen.orders: NavTab.orders};
+const _tabScreens = {
+  Screen.home: NavTab.home,
+  Screen.search: NavTab.search,
+  Screen.orders: NavTab.orders,
+  Screen.favorites: NavTab.favorites,
+};
 
 class RangoApp extends StatelessWidget {
   const RangoApp({super.key, this.api});
@@ -154,18 +165,36 @@ class _AppHomeState extends State<_AppHome> {
       ..loadNavBadges();
   }
 
-  // Barra inferior. Pedidos fica sobre a Home: voltar retorna ao Início.
+  // Barra inferior. As abas ficam sobre a Home: voltar retorna ao Início.
   void _selectTab(NavTab tab) {
     final current = _tabScreens[_stack.last];
     if (tab == current) return;
     switch (tab) {
       case NavTab.home:
         _reset([Screen.home]);
+      case NavTab.search:
+        _reset([Screen.home, Screen.search]);
+        _store.openSearch();
       case NavTab.orders:
         _reset([Screen.home, Screen.orders]);
-      case NavTab.search || NavTab.favorites || NavTab.profile:
+      case NavTab.favorites:
+        // A tela recarrega a lista ao abrir.
+        _reset([Screen.home, Screen.favorites]);
+      case NavTab.profile:
         _comingSoon(tab.label);
     }
+  }
+
+  // "Ver tudo" de uma seção da Home: busca com os filtros da seção.
+  void _seeAll(ProductTag tag) {
+    _reset([Screen.home, Screen.search]);
+    _store.openSearch(filters: SearchFilters.forSection(tag));
+  }
+
+  // Produto aberto pelos resultados: o termo entra nas buscas recentes.
+  void _openSearchResult(String id) {
+    _store.saveRecentSearch();
+    _openProduct(id);
   }
 
   void _openTracking(String code) {
@@ -185,28 +214,31 @@ class _AppHomeState extends State<_AppHome> {
     if (added && mounted) _open(Screen.cart);
   }
 
-  // Início e Pedidos ganham a barra inferior; a tela não reserva o espaço
-  // de baixo do sistema, que fica com a barra.
+  // As telas das abas ganham a barra inferior; a tela não reserva o espaço
+  // de baixo do sistema, que fica com a barra. Com o teclado aberto a barra
+  // some, para não subir junto e tomar o espaço da busca.
   Widget _withNav(Widget screen) {
     final tab = _tabScreens[_stack.last];
     if (tab == null) return screen;
+    final typing = MediaQuery.viewInsetsOf(context).bottom > 0;
     return Column(
       children: [
         Expanded(
           child: MediaQuery.removePadding(
             context: context,
-            removeBottom: true,
+            removeBottom: !typing,
             child: screen,
           ),
         ),
-        BottomNavBar(
-          current: tab,
-          onSelect: _selectTab,
-          badges: {
-            NavTab.orders: _store.liveOrderCount,
-            NavTab.favorites: _store.favoriteCount,
-          },
-        ),
+        if (!typing)
+          BottomNavBar(
+            current: tab,
+            onSelect: _selectTab,
+            badges: {
+              NavTab.orders: _store.liveOrderCount,
+              NavTab.favorites: _store.favoriteCount,
+            },
+          ),
       ],
     );
   }
@@ -296,10 +328,39 @@ class _AppHomeState extends State<_AppHome> {
             onOpenProduct: _openProduct,
             onOpenCart: _openCart,
             onOpenNotifications: () => _comingSoon('Notificações'),
-            onOpenSearch: () => _comingSoon('Busca'),
+            onOpenSearch: () => _selectTab(NavTab.search),
             onOpenProfile: () => _comingSoon('Perfil'),
             onOpenAddress: _openAddress,
-            onSeeAll: (_) => _comingSoon('Busca'),
+            onSeeAll: _seeAll,
+          ),
+          Screen.search => SearchScreen(
+            query: _store.searchQuery,
+            filters: _store.searchFilters,
+            idle: _store.searchIdle,
+            results: _store.searchResults,
+            total: _store.searchTotal,
+            recent: _store.recentSearches,
+            suggestions: _store.suggestions,
+            categories: _store.categories,
+            favoriteIds: _store.favoriteIds,
+            onQueryChanged: _store.setSearchQuery,
+            onSubmit: _store.submitSearch,
+            onPickTerm: _store.searchFor,
+            onClearRecent: _store.clearRecentSearches,
+            onApplyFilters: (filters) =>
+                _store.applySearchFilters(filters, announce: true),
+            onChangeFilters: _store.applySearchFilters,
+            onOpenProduct: _openSearchResult,
+            onToggleFavorite: _store.toggleFavorite,
+            onAddToCart: _store.addToCart,
+          ),
+          Screen.favorites => FavoritesScreen(
+            favorites: _store.favorites,
+            onLoad: _store.loadFavorites,
+            onOpenProduct: _openProduct,
+            onRemove: _store.toggleFavorite,
+            onAddToCart: _store.addToCart,
+            onExplore: () => _selectTab(NavTab.home),
           ),
           Screen.product => ProductScreen(
             key: ValueKey(_productVisit),
