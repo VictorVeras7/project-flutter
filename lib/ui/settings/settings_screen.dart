@@ -334,3 +334,63 @@ class _ThemePreview extends StatelessWidget {
     );
   }
 }
+
+// Notificações: uma chave para cada tipo de aviso.
+class NotificationSettingsScreen extends StatelessWidget {
+  const NotificationSettingsScreen({
+    super.key,
+    required this.prefs,
+    required this.onBack,
+    required this.onToggle,
+  });
+
+  final NotificationPrefs prefs;
+  final VoidCallback onBack;
+  final void Function(NotificationTopic topic, bool on) onToggle;
+
+  static const _options = [
+    (
+      NotificationTopic.orders,
+      'Pedidos',
+      'Confirmação, preparo e entrega',
+      Icons.receipt_long_outlined,
+    ),
+    (
+      NotificationTopic.promos,
+      'Promoções',
+      'Cupons e ofertas exclusivas',
+      Icons.local_offer_outlined,
+    ),
+    (
+      NotificationTopic.news,
+      'Novidades',
+      'Novos restaurantes e recursos',
+      Icons.campaign_outlined,
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsScaffold(
+      title: 'Notificações',
+      onBack: onBack,
+      children: [
+        // O teste de notificação e o aviso de permissão do protótipo
+        // dependem de notificação do sistema e ficaram de fora.
+        SettingsGroup(
+          rows: [
+            for (final (topic, label, hint, icon) in _options)
+              SettingsRow(
+                icon: icon,
+                label: label,
+                hint: hint,
+                hintSize: 11.5,
+                trailing: RangoSwitch(value: prefs[topic]),
+                onTap: () => onToggle(topic, !prefs[topic]),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
