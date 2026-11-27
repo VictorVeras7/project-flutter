@@ -256,3 +256,81 @@ class ThemeScreen extends StatelessWidget {
     );
   }
 }
+
+// Miniatura de tela com as cores de cada tema, como no protótipo.
+class _ThemePreview extends StatelessWidget {
+  const _ThemePreview.light({required this.selected})
+    : name = 'Claro',
+      background = const Color(0xFFFFFFFF),
+      block = const Color(0xFFF7F7F7),
+      line = const Color(0xFFE8E8E8),
+      text = const Color(0xFF1F1F1F);
+
+  const _ThemePreview.dark({required this.selected})
+    : name = 'Escuro',
+      background = const Color(0xFF17181B),
+      block = const Color(0xFF1E2024),
+      line = const Color(0xFF2A2C31),
+      text = const Color(0xFFF4F4F5);
+
+  final bool selected;
+  final String name;
+  final Color background;
+  final Color block;
+  final Color line;
+  final Color text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    Widget bar(double height, double widthFactor, Color color, double r) =>
+        FractionallySizedBox(
+          alignment: Alignment.centerLeft,
+          widthFactor: widthFactor,
+          child: Container(
+            height: height,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(r),
+            ),
+          ),
+        );
+
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: selected ? colors.primary : colors.outline,
+          width: 2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 7,
+        children: [
+          bar(8, 0.6, RangoColors.primary, 4),
+          Container(
+            height: 34,
+            decoration: BoxDecoration(
+              color: block,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: line),
+            ),
+          ),
+          bar(8, 0.75, line, 4),
+          bar(22, 1, RangoColors.primary, 8),
+          Text(
+            name,
+            style: TextStyle(
+              color: text,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
