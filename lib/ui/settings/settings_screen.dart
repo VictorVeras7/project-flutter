@@ -179,3 +179,80 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 }
+
+// Tema: miniaturas Claro e Escuro e as três opções.
+class ThemeScreen extends StatelessWidget {
+  const ThemeScreen({
+    super.key,
+    required this.theme,
+    required this.onBack,
+    required this.onSelect,
+  });
+
+  final ThemePreference theme;
+  final VoidCallback onBack;
+  final ValueChanged<ThemePreference> onSelect;
+
+  static const _options = [
+    (
+      ThemePreference.light,
+      'Claro',
+      'Fundo branco, laranja de destaque',
+      Icons.light_mode_outlined,
+    ),
+    (
+      ThemePreference.dark,
+      'Escuro',
+      'Fundo escuro, laranja preservado',
+      Icons.dark_mode_outlined,
+    ),
+    (
+      ThemePreference.system,
+      'Usar configuração do sistema',
+      'Segue o tema do smartphone',
+      Icons.brightness_auto_outlined,
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    // Em "Sistema", a miniatura marcada segue o aparelho.
+    final systemDark =
+        MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    final darkActive =
+        theme == ThemePreference.dark ||
+        (theme == ThemePreference.system && systemDark);
+
+    return SettingsScaffold(
+      title: 'Tema',
+      onBack: onBack,
+      spacing: 16,
+      children: [
+        Row(
+          spacing: 11,
+          children: [
+            Expanded(child: _ThemePreview.light(selected: !darkActive)),
+            Expanded(child: _ThemePreview.dark(selected: darkActive)),
+          ],
+        ),
+        SettingsGroup(
+          rows: [
+            for (final (value, label, hint, icon) in _options)
+              Semantics(
+                selected: value == theme,
+                inMutuallyExclusiveGroup: true,
+                child: SettingsRow(
+                  icon: icon,
+                  label: label,
+                  hint: hint,
+                  hintSize: 11.5,
+                  trailing: RadioMark(selected: value == theme),
+                  onTap: () => onSelect(value),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
