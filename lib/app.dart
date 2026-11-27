@@ -1,6 +1,8 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'data/product.dart';
+import 'data/profile.dart';
 import 'data/remote/rango_api.dart';
 import 'data/search.dart';
 import 'rango_store.dart';
@@ -18,7 +20,9 @@ import 'ui/favorites/favorites_screen.dart';
 import 'ui/home/home_screen.dart';
 import 'ui/login/login_screen.dart';
 import 'ui/product/product_screen.dart';
+import 'ui/profile/profile_screen.dart';
 import 'ui/search/search_screen.dart';
+import 'ui/settings/settings_screen.dart';
 import 'ui/signup/signup_screen.dart';
 import 'ui/theme/rango_theme.dart';
 import 'ui/welcome/welcome_screen.dart';
@@ -40,6 +44,10 @@ enum Screen {
   orderDetail,
   search,
   favorites,
+  profile,
+  settings,
+  themeSettings,
+  notificationSettings,
 }
 
 // Telas com a barra inferior, e a aba de cada uma.
@@ -48,37 +56,68 @@ const _tabScreens = {
   Screen.search: NavTab.search,
   Screen.orders: NavTab.orders,
   Screen.favorites: NavTab.favorites,
+  Screen.profile: NavTab.profile,
 };
 
-class RangoApp extends StatelessWidget {
+class RangoApp extends StatefulWidget {
   const RangoApp({super.key, this.api});
 
   // Os testes passam uma API com cliente falso; o app usa o back-end local.
   final RangoApi? api;
 
   @override
+  State<RangoApp> createState() => _RangoAppState();
+}
+
+// O store fica acima do MaterialApp para o tema escolhido valer no app todo.
+class _RangoAppState extends State<RangoApp> {
+  late final _store = RangoStore(widget.api ?? RangoApi());
+
+  @override
+  void dispose() {
+    _store.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Rango',
-      debugShowCheckedModeBanner: false,
-      theme: RangoTheme.light,
-      darkTheme: RangoTheme.dark,
-      home: _AppHome(api: api),
+    return ValueListenableBuilder(
+      valueListenable: _store.themePreference,
+      builder: (context, theme, _) => MaterialApp(
+        title: 'Rango',
+        debugShowCheckedModeBanner: false,
+        theme: RangoTheme.light,
+        darkTheme: RangoTheme.dark,
+        themeMode: switch (theme) {
+          ThemePreference.light => ThemeMode.light,
+          ThemePreference.dark => ThemeMode.dark,
+          ThemePreference.system => ThemeMode.system,
+        },
+        // Ícones da barra de status pelo tema do app, não pelo do aparelho:
+        // sem isso, ficam escuros sobre o fundo escuro.
+        builder: (context, child) => AnnotatedRegion(
+          value: Theme.of(context).brightness == Brightness.dark
+              ? SystemUiOverlayStyle.light
+              : SystemUiOverlayStyle.dark,
+          child: child!,
+        ),
+        home: _AppHome(store: _store),
+      ),
     );
   }
 }
 
 class _AppHome extends StatefulWidget {
-  const _AppHome({this.api});
+  const _AppHome({required this.store});
 
-  final RangoApi? api;
+  final RangoStore store;
 
   @override
   State<_AppHome> createState() => _AppHomeState();
 }
 
 class _AppHomeState extends State<_AppHome> {
-  late final _store = RangoStore(widget.api ?? RangoApi());
+  RangoStore get _store => widget.store;
   // Pilha do protótipo: voltar retorna para a tela anterior.
   final _stack = [Screen.splash];
   // Cada abertura do detalhe recomeça quantidade, adicionais e observações.
@@ -94,21 +133,40 @@ class _AppHomeState extends State<_AppHome> {
 
   @override
   void dispose() {
-    _store
-      ..removeListener(_showMessage)
-      ..dispose();
+    _store.removeListener(_showMessage);
     super.dispose();
   }
 
-  // Abertura: com sessão salva vai direto para a Home; senão, boas-vindas.
+  // Abertura: com sessão salva vai direto para a Home, já no tema salvo;
+  // senão, boas-vindas.
   Future<void> _start() async {
     final restored = await _store.restoreSession();
     if (!mounted) return;
     if (restored) {
+      await _store.loadSettings();
+      if (!mounted) return;
       _enterHome();
     } else {
       _reset([Screen.welcome]);
     }
+  }
+
+  // Login ou cadastro: o tema da conta vale a partir daqui.
+  void _signedIn() {
+    _store.loadSettings();
+    _enterHome();
+  }
+
+  // "Sair da conta" e "Limpar dados locais" voltam às boas-vindas.
+  Future<void> _signOut(Future<void> Function() action) async {
+    await action();
+    _reset([Screen.welcome]);
+  }
+
+  void _openPayments() {
+    _open(Screen.payment);
+    // Pelo Perfil, as formas de pagamento podem ainda não ter vindo.
+    if (_store.paymentMethods.isEmpty) _store.loadProfile();
   }
 
   // Erros e confirmações da API aparecem no aviso da parte de baixo da tela.
@@ -181,7 +239,8 @@ class _AppHomeState extends State<_AppHome> {
         // A tela recarrega a lista ao abrir.
         _reset([Screen.home, Screen.favorites]);
       case NavTab.profile:
-        _comingSoon(tab.label);
+        // A tela recarrega o perfil ao abrir.
+        _reset([Screen.home, Screen.profile]);
     }
   }
 
@@ -299,7 +358,7 @@ class _AppHomeState extends State<_AppHome> {
           Screen.login => LoginScreen(
             onBack: _back,
             authenticate: _store.login,
-            onLoginSuccess: _enterHome,
+            onLoginSuccess: _signedIn,
             onForgotPassword: () => _comingSoon('Recuperar senha'),
             onSignup: () => _open(Screen.signup),
           ),
@@ -307,7 +366,7 @@ class _AppHomeState extends State<_AppHome> {
             onBack: _back,
             register: _store.register,
             onSignupSuccess: () {
-              _enterHome();
+              _signedIn();
               showRangoToast(context, 'Conta criada com sucesso!');
             },
             onLogin: () => _open(Screen.login),
@@ -329,7 +388,7 @@ class _AppHomeState extends State<_AppHome> {
             onOpenCart: _openCart,
             onOpenNotifications: () => _comingSoon('Notificações'),
             onOpenSearch: () => _selectTab(NavTab.search),
-            onOpenProfile: () => _comingSoon('Perfil'),
+            onOpenProfile: () => _selectTab(NavTab.profile),
             onOpenAddress: _openAddress,
             onSeeAll: _seeAll,
           ),
@@ -353,6 +412,58 @@ class _AppHomeState extends State<_AppHome> {
             onOpenProduct: _openSearchResult,
             onToggleFavorite: _store.toggleFavorite,
             onAddToCart: _store.addToCart,
+          ),
+          Screen.profile => ProfileScreen(
+            profile: _store.profile,
+            unreadCount: _store.unreadNotifications,
+            addressCount: _store.addresses.length,
+            paymentCount: _store.paymentMethods.length,
+            theme: _store.themePreference.value,
+            onLoad: _store.loadProfile,
+            onOpenNotifications: () => _comingSoon('Notificações'),
+            onEditProfile: () => _comingSoon('Editar perfil'),
+            onAddresses: _openAddress,
+            onPayments: _openPayments,
+            onSettings: () => _open(Screen.settings),
+            onTheme: () => _open(Screen.themeSettings),
+            onHelp: () => showRangoToast(
+              context,
+              'Central de ajuda em breve.',
+              kind: RangoToastKind.info,
+            ),
+            onLogout: () => _signOut(_store.logout),
+          ),
+          Screen.settings => SettingsScreen(
+            theme: _store.themePreference.value,
+            onBack: _back,
+            onTheme: () => _open(Screen.themeSettings),
+            onNotifications: () => _open(Screen.notificationSettings),
+            onLanguage: () => showRangoToast(
+              context,
+              'Por enquanto, o app está disponível apenas em português.',
+              kind: RangoToastKind.info,
+            ),
+            onPersonalData: () => _comingSoon('Editar perfil'),
+            onAddresses: _openAddress,
+            onPayments: _openPayments,
+            onSync: _store.syncNow,
+            onClearData: () => _signOut(_store.clearLocalData),
+            onHelp: () => showRangoToast(
+              context,
+              'Central de ajuda em breve.',
+              kind: RangoToastKind.info,
+            ),
+            onTerms: () => _comingSoon('Termos e privacidade'),
+          ),
+          Screen.themeSettings => ThemeScreen(
+            theme: _store.themePreference.value,
+            onBack: _back,
+            onSelect: _store.setTheme,
+          ),
+          Screen.notificationSettings => NotificationSettingsScreen(
+            prefs: _store.notificationPrefs,
+            onBack: _back,
+            onToggle: _store.setNotification,
           ),
           Screen.favorites => FavoritesScreen(
             favorites: _store.favorites,
