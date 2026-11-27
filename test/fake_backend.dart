@@ -13,16 +13,19 @@ Map<String, Object?> product(
   double price = 30,
   double? oldPrice,
   bool favorite = false,
+  String restaurant = 'Casa do Burger',
+  double rating = 4.8,
+  int maxMinutes = 35,
 }) => {
   'id': id,
   'name': name,
-  'restaurant': 'Casa do Burger',
+  'restaurant': restaurant,
   'category': {'name': category, 'slug': category.toLowerCase()},
   'description': 'Descrição de $name',
   'price': price,
   'oldPrice': oldPrice,
-  'rating': 4.8,
-  'deliveryTime': {'min': 25, 'max': 35},
+  'rating': rating,
+  'deliveryTime': {'min': maxMinutes - 10, 'max': maxMinutes},
   'imageHue': 48,
   'tags': tags,
   'isFavorite': favorite,
@@ -87,11 +90,17 @@ class FakeBackend {
 
   final Duration homeDelay;
   final requests = <String>[];
+  // Parâmetros de cada GET /products (busca e categorias).
+  final productQueries = <Map<String, String>>[];
   final cart = <FakeLine>[];
   String? coupon;
   var _nextLineId = 1;
   var expireNextHome = false;
+  // Na ordem em que foram marcados; o servidor devolve do mais recente.
   final favorites = <String>{'p2'};
+  // Buscas recentes, mais recente primeiro (até 6), como no seed.
+  final recent = <String>['pizza', 'açaí', 'burger'];
+  var failRecentClear = false;
 
   int get cartCount => cart.fold(0, (sum, line) => sum + line.quantity);
 
@@ -193,7 +202,59 @@ class FakeBackend {
     ], oldPrice: 42.9),
     product('p2', 'Pizza margherita', 'Pizza', ['popular', 'recommended']),
     product('p5', 'Brownie com sorvete', 'Bebidas', ['fast']),
+    // Fora da Home: só aparece na busca.
+    product(
+      'p9',
+      'Lasanha bolonhesa',
+      'Massas',
+      [],
+      price: 52,
+      restaurant: 'Cantina Nonna',
+      rating: 4.5,
+      maxMinutes: 50,
+    ),
   ];
+
+  // Busca do servidor: termo sem acento em nome, restaurante e categoria,
+  // filtros e ordenação.
+  List<Map<String, Object?>> _search(Map<String, String> query) {
+    String norm(String s) => s
+        .toLowerCase()
+        .replaceAll(RegExp('[áàâã]'), 'a')
+        .replaceAll(RegExp('[éê]'), 'e')
+        .replaceAll('í', 'i')
+        .replaceAll(RegExp('[óôõ]'), 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('ç', 'c');
+    final q = norm(query['q'] ?? '');
+    final slug = query['category'];
+    final maxPrice = double.tryParse(query['maxPrice'] ?? '');
+    final minRating = double.tryParse(query['minRating'] ?? '');
+    final maxTime = int.tryParse(query['maxDeliveryTime'] ?? '');
+    final list = [
+      for (final p in _withFavorites())
+        if ((q.isEmpty ||
+                norm(
+                  '${p['name']} ${p['restaurant']} ${(p['category'] as Map)['name']}',
+                ).contains(q)) &&
+            (slug == null || (p['category'] as Map)['slug'] == slug) &&
+            (maxPrice == null || (p['price'] as num) <= maxPrice) &&
+            (minRating == null || (p['rating'] as num) >= minRating) &&
+            (maxTime == null ||
+                ((p['deliveryTime'] as Map)['max'] as int) <= maxTime))
+          p,
+    ];
+    num field(Map<String, Object?> p, String key) => p[key] as num;
+    switch (query['sort']) {
+      case 'price_asc':
+        list.sort((a, b) => field(a, 'price').compareTo(field(b, 'price')));
+      case 'price_desc':
+        list.sort((a, b) => field(b, 'price').compareTo(field(a, 'price')));
+      case 'rating':
+        list.sort((a, b) => field(b, 'rating').compareTo(field(a, 'rating')));
+    }
+    return list;
+  }
 
   RangoApi api() =>
       RangoApi(client: MockClient(_handle), baseUrl: 'http://api');
@@ -256,13 +317,37 @@ class FakeBackend {
           ],
         });
       case ('GET', '/products'):
-        final slug = request.url.queryParameters['category'];
+        productQueries.add(request.url.queryParameters);
+        final list = _search(request.url.queryParameters);
+        return _json({
+          'data': list,
+          'meta': {'total': list.length},
+        });
+      case ('GET', '/search/suggestions'):
         return _json({
           'data': [
-            for (final p in _withFavorites())
-              if ((p['category'] as Map)['slug'] == slug) p,
+            'Pizza margherita',
+            'Burger duplo cheddar',
+            'Lasanha bolonhesa',
+            'Brownie com sorvete',
+            'Combo burger + fritas',
           ],
         });
+      case ('GET', '/search/recent'):
+        return _json({'data': recent});
+      case ('POST', '/search/recent'):
+        final term = (body['term'] as String).trim().toLowerCase();
+        recent
+          ..remove(term)
+          ..insert(0, term);
+        if (recent.length > 6) recent.removeRange(6, recent.length);
+        return _json({'data': recent});
+      case ('DELETE', '/search/recent'):
+        if (failRecentClear) {
+          return _error(500, 'INTERNAL_ERROR', 'Não foi possível limpar.');
+        }
+        recent.clear();
+        return http.Response('', 204);
       case ('GET', '/cart'):
         return _cart();
       case ('POST', '/cart/items'):
@@ -347,10 +432,11 @@ class FakeBackend {
           'meta': {'total': list.length},
         });
       case ('GET', '/favorites'):
+        final all = _withFavorites();
         return _json({
           'data': [
-            for (final p in _withFavorites())
-              if (favorites.contains(p['id'])) p,
+            for (final id in favorites.toList().reversed)
+              ?all.where((p) => p['id'] == id).firstOrNull,
           ],
         });
       case ('PUT', '/cart/coupon'):
