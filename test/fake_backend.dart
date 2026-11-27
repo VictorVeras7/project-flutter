@@ -101,6 +101,15 @@ class FakeBackend {
   // Buscas recentes, mais recente primeiro (até 6), como no seed.
   final recent = <String>['pizza', 'açaí', 'burger'];
   var failRecentClear = false;
+  // Configurações da conta, como no seed.
+  var theme = 'light';
+  final notifications = {'orders': true, 'promos': true, 'news': false};
+  var failSettings = false;
+  // Corpos dos PATCH /me/settings recebidos.
+  final settingsPatches = <Map<String, Object?>>[];
+  var unreadCount = 12;
+  // Refresh tokens revogados em POST /auth/logout.
+  final loggedOut = <String>[];
 
   int get cartCount => cart.fold(0, (sum, line) => sum + line.quantity);
 
@@ -323,6 +332,34 @@ class FakeBackend {
           'data': list,
           'meta': {'total': list.length},
         });
+      case ('GET', '/me'):
+        return _json({
+          'id': 1,
+          'name': 'Marina Alves',
+          'email': 'marina.alves@email.com',
+          'phone': '(11) 98876-4410',
+          'avatarUrl': null,
+        });
+      case ('GET', '/me/settings'):
+        return _settings();
+      case ('PATCH', '/me/settings'):
+        settingsPatches.add(body);
+        if (failSettings) {
+          return _error(500, 'INTERNAL_ERROR', 'Não foi possível salvar.');
+        }
+        if (body['theme'] case final String value) theme = value;
+        if (body['notifications'] case final Map<String, Object?> changed) {
+          notifications.addAll(changed.cast<String, bool>());
+        }
+        return _settings();
+      case ('GET', '/notifications'):
+        return _json({
+          'data': const [],
+          'meta': {'total': unreadCount},
+        });
+      case ('POST', '/auth/logout'):
+        loggedOut.add(body['refreshToken'] as String);
+        return http.Response('', 204);
       case ('GET', '/search/suggestions'):
         return _json({
           'data': [
@@ -648,6 +685,9 @@ class FakeBackend {
   List<Map<String, Object?>> _withFavorites() => [
     for (final p in products) {...p, 'isFavorite': favorites.contains(p['id'])},
   ];
+
+  http.Response _settings() =>
+      _json({'theme': theme, 'notifications': notifications});
 
   http.Response _session({String name = 'Marina Alves'}) => _json({
     'accessToken': 'access-1',
