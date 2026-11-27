@@ -2,7 +2,19 @@ import '../cart.dart';
 import '../checkout.dart';
 import '../order.dart';
 import '../product.dart';
+import '../profile.dart';
 import 'api_models.dart';
+
+extension ProfileDtoMapper on ProfileDto {
+  Profile toProfile() => Profile(name: name, email: email, phone: phone);
+}
+
+extension SettingsDtoMapper on SettingsDto {
+  ThemePreference get themePreference => ThemePreference.fromApi(theme);
+
+  NotificationPrefs get notificationPrefs =>
+      NotificationPrefs(orders: orders, promos: promos, news: news);
+}
 
 extension ProductDtoMapper on ProductDto {
   Product toProduct() => Product(

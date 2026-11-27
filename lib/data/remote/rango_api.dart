@@ -261,6 +261,45 @@ class RangoApi {
   Future<ReorderDto> reorder(String code) async =>
       ReorderDto.fromJson(await _call('POST', '/orders/$code/reorder'));
 
+  // Perfil e configurações
+
+  Future<ProfileDto> me() async =>
+      ProfileDto.fromJson(await _call('GET', '/me'));
+
+  Future<SettingsDto> settings() async =>
+      SettingsDto.fromJson(await _call('GET', '/me/settings'));
+
+  // Parcial: só os campos enviados mudam no servidor.
+  Future<SettingsDto> updateSettings({
+    String? theme,
+    Map<String, bool>? notifications,
+  }) async => SettingsDto.fromJson(
+    await _call(
+      'PATCH',
+      '/me/settings',
+      body: {'theme': ?theme, 'notifications': ?notifications},
+    ),
+  );
+
+  Future<int> unreadNotificationCount() async => listTotal(
+    await _call('GET', '/notifications?unreadOnly=true&pageSize=1'),
+  );
+
+  // Sair: a sessão do aparelho é apagada antes de avisar o servidor, para
+  // sair funcionar sem rede. O aviso revoga o refresh token e não é esperado.
+  Future<void> logout() async {
+    final token = _refreshToken;
+    _accessToken = null;
+    _refreshToken = null;
+    await _storage.saveRefreshToken(null);
+    if (token == null) return;
+    unawaited(
+      _send('POST', '/auth/logout', false, {
+        'refreshToken': token,
+      }).then((_) {}, onError: (Object _) {}),
+    );
+  }
+
   Future<FavoriteListDto> favorites() async =>
       FavoriteListDto.fromJson(await _call('GET', '/favorites'));
 

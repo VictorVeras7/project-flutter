@@ -6,6 +6,7 @@ import 'data/cart.dart';
 import 'data/checkout.dart';
 import 'data/order.dart';
 import 'data/product.dart';
+import 'data/profile.dart';
 import 'data/remote/api_models.dart';
 import 'data/remote/mappers.dart';
 import 'data/remote/rango_api.dart';
@@ -69,7 +70,16 @@ class RangoStore extends ChangeNotifier {
   var suggestions = <SearchSuggestion>[];
   // Favoritos, mais recentes primeiro; null = ainda não carregou.
   List<Product>? favorites;
+  // Perfil; null = ainda não carregou.
+  Profile? profile;
+  // Tema do app. Fica num notifier próprio porque o MaterialApp, acima das
+  // telas, escuta só ele.
+  final themePreference = ValueNotifier(ThemePreference.light);
+  var notificationPrefs = NotificationPrefs.initial;
   StoreMessage? message;
+  // Quantos avisos de erro já apareceram ("Sincronizar agora" só confirma
+  // se nenhum apareceu durante a sincronização).
+  var _errorCount = 0;
 
   // Espera depois da última tecla antes de buscar.
   static const searchDelay = Duration(milliseconds: 300);
@@ -160,13 +170,105 @@ class RangoStore extends ChangeNotifier {
     recentSearches = [];
     suggestions = [];
     favorites = null;
+    profile = null;
+    notificationPrefs = NotificationPrefs.initial;
+    // O tema fica: as boas-vindas continuam no tema que estava em uso.
   }
 
   @override
   void dispose() {
     _trackingTimer?.cancel();
     _searchTimer?.cancel();
+    themePreference.dispose();
     super.dispose();
+  }
+
+  // Perfil e configurações
+
+  // Na entrada, para o app já abrir no tema salvo. Falha aqui não merece
+  // aviso: o tema atual continua até a próxima carga.
+  Future<void> loadSettings() async {
+    try {
+      _setSettings(await _api.settings());
+      notifyListeners();
+    } on Object {
+      // Sessão encerrada já é tratada pela API.
+    }
+  }
+
+  void _setSettings(SettingsDto dto) {
+    themePreference.value = dto.themePreference;
+    notificationPrefs = dto.notificationPrefs;
+  }
+
+  // Dados da conta, configurações e as contagens das dicas, em paralelo.
+  Future<void> loadProfile() => _safely(() async {
+    final (me, settings, addressList, payments, unread) = await (
+      _api.me(),
+      _api.settings(),
+      _api.addresses(),
+      _api.paymentMethods(),
+      _api.unreadNotificationCount(),
+    ).wait;
+    profile = me.toProfile();
+    _setSettings(settings);
+    _setAddresses(addressList);
+    paymentMethods = [for (final p in payments) p.toPaymentMethod()];
+    // Pagamento aberto pelo Perfil mostra a mesma escolha do checkout.
+    if (selectedPayment == null && paymentMethods.isNotEmpty) {
+      selectedPaymentId = paymentMethods.first.id;
+    }
+    unreadNotifications = unread;
+  });
+
+  // Troca na hora e volta ao anterior se o servidor recusar.
+  Future<void> setTheme(ThemePreference theme) async {
+    final previous = themePreference.value;
+    if (theme == previous) return;
+    themePreference.value = theme;
+    notifyListeners();
+    try {
+      await _api.updateSettings(theme: theme.apiKey);
+    } on Object catch (e) {
+      themePreference.value = previous;
+      _show(_errorText(e), MessageKind.error);
+    }
+  }
+
+  // Manda só a chave que mudou; o servidor mantém as outras.
+  Future<void> setNotification(NotificationTopic topic, bool on) async {
+    final previous = notificationPrefs;
+    notificationPrefs = previous.copyWith(topic, on);
+    notifyListeners();
+    try {
+      await _api.updateSettings(notifications: {topic.name: on});
+    } on Object catch (e) {
+      notificationPrefs = notificationPrefs.copyWith(topic, previous[topic]);
+      _show(_errorText(e), MessageKind.error);
+    }
+  }
+
+  // "Sincronizar agora": busca de novo o que aparece nas telas.
+  Future<void> syncNow() async {
+    final errors = _errorCount;
+    await Future.wait([loadHome(), loadNavBadges(), loadCart(), loadProfile()]);
+    if (_errorCount == errors) {
+      _show('Dados sincronizados.', MessageKind.success);
+    }
+  }
+
+  // "Sair da conta": a sessão sai do aparelho na hora, mesmo sem rede.
+  Future<void> logout({String text = 'Você saiu da conta.'}) async {
+    await _api.logout();
+    _clear();
+    _show(text, MessageKind.info);
+  }
+
+  // "Limpar dados locais": o que fica no aparelho é a sessão (carrinho e
+  // favoritos ficam no servidor). Sai da conta e o tema volta ao padrão.
+  Future<void> clearLocalData() async {
+    themePreference.value = ThemePreference.light;
+    await logout(text: 'Dados locais apagados.');
   }
 
   // Home
@@ -791,6 +893,7 @@ class RangoStore extends ChangeNotifier {
   }
 
   void _show(String text, MessageKind kind) {
+    if (kind == MessageKind.error) _errorCount++;
     message = (text: text, kind: kind);
     notifyListeners();
   }

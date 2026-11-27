@@ -460,14 +460,5 @@ void main() {
       await settle(tester);
       expect(find.byType(OrderPlacedScreen), findsOneWidget);
     });
-
-    testWidgets('aba ainda não feita avisa "em breve"', (tester) async {
-      await pumpLoggedIn(tester);
-
-      await tester.tap(find.text('Perfil'));
-      await settle(tester);
-      expect(find.text('Perfil estará disponível em breve.'), findsOneWidget);
-      expect(find.byType(HomeScreen), findsOneWidget);
-    });
   });
 }

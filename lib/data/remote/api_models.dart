@@ -371,6 +371,33 @@ class FavoriteListDto {
   int get count => data.length;
 }
 
+class ProfileDto {
+  ProfileDto.fromJson(Json json)
+    : name = json['name'] as String,
+      email = json['email'] as String,
+      phone = json['phone'] as String? ?? '';
+
+  final String name;
+  final String email;
+  final String phone;
+}
+
+class SettingsDto {
+  SettingsDto.fromJson(Json json)
+    : theme = json['theme'] as String,
+      orders = (json['notifications'] as Json)['orders'] as bool,
+      promos = (json['notifications'] as Json)['promos'] as bool,
+      news = (json['notifications'] as Json)['news'] as bool;
+
+  final String theme;
+  final bool orders;
+  final bool promos;
+  final bool news;
+}
+
+// Só o total de uma lista paginada (notificações não lidas).
+int listTotal(Object? json) => ((json as Json)['meta'] as Json)['total'] as int;
+
 // Buscas recentes e sugestões: só os textos.
 List<String> stringList(Object? json) => [
   for (final item in ((json as Json)['data'] as List? ?? const []))
