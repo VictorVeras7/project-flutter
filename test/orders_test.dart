@@ -461,12 +461,12 @@ void main() {
       expect(find.byType(OrderPlacedScreen), findsOneWidget);
     });
 
-    testWidgets('abas ainda não feitas avisam "em breve"', (tester) async {
+    testWidgets('aba ainda não feita avisa "em breve"', (tester) async {
       await pumpLoggedIn(tester);
 
-      await tester.tap(find.text('Buscar'));
+      await tester.tap(find.text('Perfil'));
       await settle(tester);
-      expect(find.text('Buscar estará disponível em breve.'), findsOneWidget);
+      expect(find.text('Perfil estará disponível em breve.'), findsOneWidget);
       expect(find.byType(HomeScreen), findsOneWidget);
     });
   });

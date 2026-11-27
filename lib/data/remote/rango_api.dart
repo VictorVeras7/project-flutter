@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../search.dart';
 import 'api_models.dart';
 import 'platform.dart';
 
@@ -111,6 +112,43 @@ class RangoApi {
 
   Future<void> setFavorite(String productId, bool favorite) =>
       _call(favorite ? 'PUT' : 'DELETE', '/favorites/$productId');
+
+  // Busca: só manda os filtros que fogem do padrão ("Todos", "Qualquer").
+  Future<ProductListDto> searchProducts(
+    String query,
+    SearchFilters filters, {
+    String? categorySlug,
+  }) async {
+    final params = {
+      if (query.isNotEmpty) 'q': query,
+      'category': ?categorySlug,
+      if (filters.hasPrice) 'maxPrice': '${filters.maxPrice}',
+      if (filters.hasRating) 'minRating': '${filters.minRating}',
+      if (filters.hasTime) 'maxDeliveryTime': '${filters.maxTime}',
+      'sort': filters.sort.apiKey,
+      'pageSize': '50',
+    };
+    return ProductListDto.fromJson(
+      await _call(
+        'GET',
+        Uri(path: '/products', queryParameters: params).toString(),
+      ),
+    );
+  }
+
+  // Sem termo: os mais pedidos.
+  Future<List<String>> searchSuggestions() async =>
+      stringList(await _call('GET', '/search/suggestions'));
+
+  // Até 6, mais recente primeiro.
+  Future<List<String>> recentSearches() async =>
+      stringList(await _call('GET', '/search/recent'));
+
+  // Devolve a lista atualizada.
+  Future<List<String>> saveRecentSearch(String term) async =>
+      stringList(await _call('POST', '/search/recent', body: {'term': term}));
+
+  Future<void> clearRecentSearches() => _call('DELETE', '/search/recent');
 
   // Carrinho: toda chamada devolve o carrinho completo atualizado.
 

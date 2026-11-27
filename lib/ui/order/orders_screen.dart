@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../data/order.dart';
 import '../../data/product.dart';
 import '../checkout/checkout_components.dart';
+import '../components/empty_state.dart';
 import '../components/product_card.dart';
 import '../theme/rango_theme.dart';
 import 'order_components.dart';
@@ -364,71 +365,13 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 50),
-      child: Column(
-        children: [
-          Container(
-            width: 96,
-            height: 96,
-            decoration: BoxDecoration(
-              color: colors.surface,
-              borderRadius: BorderRadius.circular(32),
-              border: Border.all(color: colors.outline),
-            ),
-            child: Icon(
-              Icons.receipt_long_outlined,
-              size: 42,
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 13),
-          Text(
-            group == OrderGroup.live
-                ? 'Nenhum pedido em andamento'
-                : 'Nenhum pedido anterior',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: colors.onSurface,
-              fontSize: 16.5,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 13),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 240),
-            child: Text(
-              'Quando você fizer um pedido, ele aparece aqui.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: colors.onSurfaceVariant,
-                fontSize: 13,
-                height: 1.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          const SizedBox(height: 17),
-          FilledButton(
-            onPressed: onOrderNow,
-            style: FilledButton.styleFrom(
-              backgroundColor: colors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 13),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            child: const Text('Fazer um pedido'),
-          ),
-        ],
-      ),
+    return EmptyState(
+      icon: Icons.receipt_long_outlined,
+      title: group == OrderGroup.live
+          ? 'Nenhum pedido em andamento'
+          : 'Nenhum pedido anterior',
+      text: 'Quando você fizer um pedido, ele aparece aqui.',
+      action: EmptyStateButton(label: 'Fazer um pedido', onPressed: onOrderNow),
     );
   }
 }

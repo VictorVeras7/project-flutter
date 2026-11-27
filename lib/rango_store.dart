@@ -9,6 +9,7 @@ import 'data/product.dart';
 import 'data/remote/api_models.dart';
 import 'data/remote/mappers.dart';
 import 'data/remote/rango_api.dart';
+import 'data/search.dart';
 
 enum MessageKind { success, error, info }
 
@@ -58,7 +59,23 @@ class RangoStore extends ChangeNotifier {
   // Pedido acompanhado (atualizado a cada 5 s) e pedido aberto no detalhe.
   OrderDetail? trackedOrder;
   OrderDetail? openedOrder;
+  // Busca: termo, filtros e resultados continuam ao voltar do produto.
+  var searchQuery = '';
+  var searchFilters = SearchFilters.none;
+  // Resultados da busca; null = carregando.
+  List<Product>? searchResults;
+  var searchTotal = 0;
+  var recentSearches = <String>[];
+  var suggestions = <SearchSuggestion>[];
+  // Favoritos, mais recentes primeiro; null = ainda não carregou.
+  List<Product>? favorites;
   StoreMessage? message;
+
+  // Espera depois da última tecla antes de buscar.
+  static const searchDelay = Duration(milliseconds: 300);
+  Timer? _searchTimer;
+  // Só a busca mais recente vale; as anteriores são descartadas na volta.
+  var _searchRequest = 0;
 
   static const trackingInterval = Duration(seconds: 5);
   Timer? _trackingTimer;
@@ -134,11 +151,21 @@ class RangoStore extends ChangeNotifier {
     ordersGroup = OrderGroup.live;
     stopTracking();
     closeOrder();
+    _searchTimer?.cancel();
+    _searchRequest++;
+    searchQuery = '';
+    searchFilters = SearchFilters.none;
+    searchResults = null;
+    searchTotal = 0;
+    recentSearches = [];
+    suggestions = [];
+    favorites = null;
   }
 
   @override
   void dispose() {
     _trackingTimer?.cancel();
+    _searchTimer?.cancel();
     super.dispose();
   }
 
@@ -179,7 +206,14 @@ class RangoStore extends ChangeNotifier {
 
   void toggleFavorite(String id) {
     final favorite = !favoriteIds.contains(id);
+    final previousList = favorites;
     // Atualiza na hora e desfaz se o servidor recusar.
+    if (previousList != null) {
+      final others = previousList.where((p) => p.id != id);
+      final product = favorite ? _findProduct(id) : null;
+      // O novo favorito entra no topo, como na ordem do servidor.
+      favorites = [?product, ...others];
+    }
     _setFavorite(id, favorite);
     favoriteCount += favorite ? 1 : -1;
     _show(
@@ -187,10 +221,155 @@ class RangoStore extends ChangeNotifier {
       favorite ? MessageKind.success : MessageKind.info,
     );
     _api.setFavorite(id, favorite).catchError((Object e) {
+      // A lista volta como estava, com o item no mesmo lugar.
+      favorites = previousList;
       _setFavorite(id, !favorite);
       favoriteCount += favorite ? -1 : 1;
       _show(_errorText(e), MessageKind.error);
     });
+  }
+
+  // Favoritos
+
+  // Lista da aba e o número da barra; a ordem é a do servidor.
+  Future<void> loadFavorites() => _safely(() async {
+    _setFavorites(await _api.favorites());
+  });
+
+  void _setFavorites(FavoriteListDto list) {
+    final products = [for (final dto in list.data) dto.toProduct()];
+    favorites = products;
+    favoriteCount = list.count;
+    favoriteIds = {for (final p in products) p.id};
+  }
+
+  // Busca
+
+  // Sem termo e sem filtros: mostra recentes e sugestões.
+  bool get searchIdle => searchQuery.trim().isEmpty && searchFilters.isEmpty;
+
+  // Aba "Buscar" mantém a busca anterior; "Ver tudo" da Home troca pelos
+  // filtros da seção.
+  Future<void> openSearch({SearchFilters? filters}) async {
+    if (filters != null) {
+      _searchTimer?.cancel();
+      searchQuery = '';
+      searchFilters = filters;
+      searchResults = null;
+    }
+    notifyListeners();
+    if (!searchIdle && (filters != null || searchResults == null)) {
+      unawaited(_runSearch());
+    }
+    await _safely(() async {
+      final (recent, names) = await (
+        _api.recentSearches(),
+        _api.searchSuggestions(),
+      ).wait;
+      recentSearches = recent;
+      // O protótipo mostra quatro, com o resumo do produto embaixo.
+      suggestions = [for (final name in names.take(4)) _suggestion(name)];
+    });
+  }
+
+  SearchSuggestion _suggestion(String name) {
+    final product = _allProducts().where((p) => p.name == name).firstOrNull;
+    if (product == null) return SearchSuggestion(name);
+    return SearchSuggestion(
+      name,
+      '${product.restaurant} · ${formatRating(product.rating)} · '
+      '${formatMoney(product.price)}',
+    );
+  }
+
+  // Ao digitar: espera 300 ms sem novas teclas antes de buscar.
+  void setSearchQuery(String query) {
+    if (query == searchQuery) return;
+    searchQuery = query;
+    _searchTimer?.cancel();
+    if (searchIdle) {
+      _searchRequest++;
+      searchResults = null;
+    } else {
+      _searchTimer = Timer(searchDelay, _runSearch);
+    }
+    notifyListeners();
+  }
+
+  // Busca recente ou sugestão tocada: busca na hora.
+  void searchFor(String term) {
+    searchQuery = term;
+    unawaited(_runSearch());
+  }
+
+  // "Buscar" do teclado: busca na hora e guarda o termo.
+  void submitSearch() {
+    if (searchQuery.trim().isEmpty) return;
+    unawaited(_runSearch());
+    unawaited(saveRecentSearch());
+  }
+
+  // Folha de filtros (com aviso), chips e "Limpar filtros".
+  void applySearchFilters(SearchFilters filters, {bool announce = false}) {
+    searchFilters = filters;
+    if (announce) _show('Filtros aplicados.', MessageKind.success);
+    unawaited(_runSearch());
+  }
+
+  Future<void> _runSearch() async {
+    _searchTimer?.cancel();
+    final request = ++_searchRequest;
+    if (searchIdle) {
+      searchResults = null;
+      notifyListeners();
+      return;
+    }
+    final filters = searchFilters;
+    // Os resultados anteriores ficam na tela até os novos chegarem.
+    notifyListeners();
+    try {
+      final list = await _api.searchProducts(
+        searchQuery.trim(),
+        filters,
+        categorySlug: filters.hasCategory
+            ? _categorySlugs[filters.category]
+            : null,
+      );
+      if (request != _searchRequest) return;
+      searchResults = _products(list.data);
+      searchTotal = list.total;
+    } on Object catch (e) {
+      if (request != _searchRequest) return;
+      searchResults ??= const [];
+      _show(_errorText(e), MessageKind.error);
+    }
+    notifyListeners();
+  }
+
+  // Ao confirmar a busca ou abrir um produto dos resultados. Falha aqui
+  // não atrapalha a busca, então não mostra aviso.
+  Future<void> saveRecentSearch() async {
+    final term = searchQuery.trim();
+    if (term.isEmpty) return;
+    try {
+      recentSearches = await _api.saveRecentSearch(term);
+      notifyListeners();
+    } on Object {
+      // Sessão encerrada já é tratada pela API.
+    }
+  }
+
+  // "Limpar" das buscas recentes; volta a lista se o servidor recusar.
+  Future<void> clearRecentSearches() async {
+    final previous = recentSearches;
+    recentSearches = [];
+    notifyListeners();
+    try {
+      await _api.clearRecentSearches();
+    } on Object catch (e) {
+      recentSearches = previous;
+      _show(_errorText(e), MessageKind.error);
+    }
   }
 
   // Produto
@@ -221,14 +400,16 @@ class RangoStore extends ChangeNotifier {
     productDetail = null;
   }
 
-  Product? _findProduct(String id) {
-    for (final list in [...sections.values, ...categoryProducts.values]) {
-      for (final product in list) {
-        if (product.id == id) return product;
-      }
-    }
-    return null;
-  }
+  Product? _findProduct(String id) =>
+      _allProducts().where((p) => p.id == id).firstOrNull;
+
+  // Todos os produtos que o app já recebeu (Home, categorias, busca e favoritos).
+  Iterable<Product> _allProducts() => [
+    ...sections.values,
+    ...categoryProducts.values,
+    ?searchResults,
+    ?favorites,
+  ].expand((list) => list);
 
   // Carrinho
 
@@ -464,7 +645,7 @@ class RangoStore extends ChangeNotifier {
         _api.favorites(),
       ).wait;
       liveOrderCount = live.total;
-      favoriteCount = favorites.count;
+      _setFavorites(favorites);
       notifyListeners();
     } on Object {
       // Sessão encerrada já é tratada pela API; o resto é ignorado.
